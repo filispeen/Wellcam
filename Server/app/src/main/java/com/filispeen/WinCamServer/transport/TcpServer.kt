@@ -10,10 +10,18 @@ import java.net.Socket
 
 enum class ServerState { Stopped, Listening, Connected, Error }
 
+interface ClientListener {
+    fun onClientConnected()
+    fun onClientDisconnected()
+}
+
 class TcpServer(
     private val port: Int,
     private val onState: (ServerState, String?) -> Unit
 ) {
+    @Volatile
+    var clientListener: ClientListener? = null
+
     private val main = Handler(Looper.getMainLooper())
     private val lock = Any()
     private var token: Any? = null
@@ -94,6 +102,7 @@ class TcpServer(
             client = socket
         }
         post(t, ServerState.Connected, socket.inetAddress?.hostAddress)
+        clientListener?.onClientConnected()
         try {
             val input = socket.getInputStream()
             val buffer = ByteArray(1024)
@@ -101,10 +110,16 @@ class TcpServer(
             }
         } catch (e: IOException) {
         }
-        synchronized(lock) {
-            if (client === socket) client = null
+        val wasCurrent = synchronized(lock) {
+            if (client === socket) {
+                client = null
+                true
+            } else {
+                false
+            }
         }
         closeQuietly(socket)
+        if (wasCurrent) clientListener?.onClientDisconnected()
         if (alive(t)) post(t, ServerState.Listening, null)
     }
 
