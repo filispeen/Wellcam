@@ -31,7 +31,7 @@ private tailrec fun Context.findLifecycleOwner(): LifecycleOwner? = when (this) 
 @Composable
 fun CameraPreview(
     backend: CameraBackend,
-    cameraId: String?,
+    config: CameraConfig,
     zoom: Float,
     onMaxZoom: (Float) -> Unit,
     modifier: Modifier = Modifier,
@@ -39,7 +39,6 @@ fun CameraPreview(
 ) {
     val context = LocalContext.current
     val owner = remember(context) { context.findLifecycleOwner() }
-    val config = remember(cameraId) { CameraConfig(1280, 720, cameraId) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val latestOnError by rememberUpdatedState(onError)
     val latestOnMaxZoom by rememberUpdatedState(onMaxZoom)

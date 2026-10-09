@@ -12,7 +12,12 @@ import android.view.TextureView
 import kotlin.math.abs
 import kotlin.math.max
 
-data class CameraConfig(val width: Int, val height: Int, val cameraId: String? = null)
+data class CameraConfig(
+    val width: Int,
+    val height: Int,
+    val cameraId: String? = null,
+    val fps: Int = 30
+)
 
 data class CameraOption(val id: String, val label: String)
 
@@ -25,6 +30,8 @@ interface CameraBackend {
     fun onFrame(texture: SurfaceTexture)
     fun setZoom(ratio: Float)
     fun cameras(): List<CameraOption>
+    fun sizes(cameraId: String?): List<Size>
+    fun fpsOptions(cameraId: String?, size: Size?): List<Int>
     fun stop()
 }
 

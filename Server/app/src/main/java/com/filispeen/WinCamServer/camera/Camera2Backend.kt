@@ -42,6 +42,7 @@ class Camera2Backend(private val context: Context) : CameraBackend {
     private var useZoomRatio = false
     private var activeArray: Rect? = null
     private var previewBuilder: CaptureRequest.Builder? = null
+    private var fpsRange: android.util.Range<Int>? = null
 
     override fun cameras(): List<CameraOption> {
         val entries = try {
@@ -66,6 +67,51 @@ class Camera2Backend(private val context: Context) : CameraBackend {
             emptyList()
         }
         return buildCameraOptions(entries)
+    }
+
+    private fun resolveId(requested: String?): String? =
+        if (requested != null && manager.cameraIdList.contains(requested)) {
+            requested
+        } else {
+            CameraBackends.camera2Id(context)
+        }
+
+    override fun sizes(cameraId: String?): List<Size> = try {
+        val id = resolveId(cameraId)
+        if (id == null) {
+            emptyList()
+        } else {
+            manager.getCameraCharacteristics(id)
+                .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                ?.getOutputSizes(SurfaceTexture::class.java)
+                ?.toList()
+                .orEmpty()
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    override fun fpsOptions(cameraId: String?, size: Size?): List<Int> = try {
+        val id = resolveId(cameraId)
+        if (id == null) {
+            emptyList()
+        } else {
+            val chars = manager.getCameraCharacteristics(id)
+            val uppers = chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+                ?.map { it.upper }
+                ?.distinct()
+                ?.sorted()
+                .orEmpty()
+            var limit = Int.MAX_VALUE
+            val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            if (size != null && map != null) {
+                val duration = map.getOutputMinFrameDuration(SurfaceTexture::class.java, size)
+                if (duration > 0) limit = (1_000_000_000.0 / duration + 0.5).toInt()
+            }
+            uppers.filter { it <= limit }.ifEmpty { listOfNotNull(uppers.firstOrNull()) }
+        }
+    } catch (e: Exception) {
+        emptyList()
     }
 
     @SuppressLint("MissingPermission")
@@ -109,6 +155,9 @@ class Camera2Backend(private val context: Context) : CameraBackend {
                 zoomLimit = chars.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: 1f
             }
             val array = chars.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+            val chosenRange = chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+                ?.filter { it.upper == config.fps }
+                ?.maxByOrNull { it.lower }
             texture.setDefaultBufferSize(chosen.width, chosen.height)
             val newThread = HandlerThread("WinCamCamera2").also { it.start() }
             val newHandler = Handler(newThread.looper)
@@ -124,6 +173,7 @@ class Camera2Backend(private val context: Context) : CameraBackend {
                 zoomRatio = 1f
                 useZoomRatio = ratioMode
                 activeArray = array
+                fpsRange = chosenRange
                 maxZoom = zoomLimit.coerceAtLeast(1f)
                 afMode = when {
                     CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO in modes ->
@@ -202,6 +252,7 @@ class Camera2Backend(private val context: Context) : CameraBackend {
                                 val builder = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
                                 builder.addTarget(target)
                                 afMode?.let { builder.set(CaptureRequest.CONTROL_AF_MODE, it) }
+                                fpsRange?.let { builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it) }
                                 applyZoom(builder)
                                 previewBuilder = builder
                                 builder.build()

@@ -2,6 +2,8 @@ package com.filispeen.WinCamServer
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -32,6 +34,14 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.input.KeyboardType
+import com.filispeen.WinCamServer.encoder.EncoderSupport
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -54,6 +64,7 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
@@ -69,6 +80,10 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.filispeen.WinCamServer.camera.CameraBackend
 import com.filispeen.WinCamServer.camera.CameraBackends
+import com.filispeen.WinCamServer.camera.CameraConfig
+import com.filispeen.WinCamServer.camera.defaultFps
+import com.filispeen.WinCamServer.camera.defaultSize
+import com.filispeen.WinCamServer.camera.groupByAspect
 import com.filispeen.WinCamServer.camera.CameraPreview
 import com.filispeen.WinCamServer.transport.LocalAddresses
 import com.filispeen.WinCamServer.transport.ServerState
@@ -83,8 +98,8 @@ private val ColorAccent = Color(0xFF1D4ED8)
 private val ColorStop = Color(0xFFB91C1C)
 private val ColorLive = Color(0xFF22C55E)
 
-private val ResolutionOptions = listOf("1280x720", "1920x1080", "2560x1440")
-private val FpsOptions = listOf("24 FPS", "30 FPS", "60 FPS")
+private val FallbackSizes = listOf(Size(1280, 720), Size(1920, 1080), Size(2560, 1440))
+private val FallbackFps = listOf(24, 30, 60)
 private val ConnectionOptions = listOf("USB", "Wi-Fi")
 private const val ServerPort = 5555
 
@@ -176,7 +191,7 @@ private fun PreviewPanel(
     backend: CameraBackend?,
     hasPermission: Boolean,
     error: String?,
-    cameraId: String?,
+    config: CameraConfig,
     zoom: Float,
     onMaxZoom: (Float) -> Unit,
     onPlaceholderClick: () -> Unit,
@@ -195,14 +210,22 @@ private fun PreviewPanel(
         contentAlignment = Alignment.Center
     ) {
         if (hasPermission && error == null && backend != null) {
-            CameraPreview(
-                backend = backend,
-                cameraId = cameraId,
-                zoom = zoom,
-                onMaxZoom = onMaxZoom,
-                modifier = Modifier.fillMaxSize(),
-                onError = onError
-            )
+            val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+            val ratio = if (landscape) {
+                config.width.toFloat() / config.height
+            } else {
+                config.height.toFloat() / config.width
+            }
+            Box(Modifier.aspectRatio(ratio)) {
+                CameraPreview(
+                    backend = backend,
+                    config = config,
+                    zoom = zoom,
+                    onMaxZoom = onMaxZoom,
+                    modifier = Modifier.fillMaxSize(),
+                    onError = onError
+                )
+            }
         } else {
             val icon = (minOf(maxWidth, maxHeight) * 0.3f).coerceIn(48.dp, 136.dp)
             Column(
@@ -301,7 +324,7 @@ private fun PreviewSection(
     backend: CameraBackend?,
     hasPermission: Boolean,
     error: String?,
-    cameraId: String?,
+    config: CameraConfig,
     zoom: Float,
     maxZoom: Float,
     onZoom: (Float) -> Unit,
@@ -324,7 +347,7 @@ private fun PreviewSection(
             backend = backend,
             hasPermission = hasPermission,
             error = error,
-            cameraId = cameraId,
+            config = config,
             zoom = zoom,
             onMaxZoom = onMaxZoom,
             onPlaceholderClick = onPlaceholderClick,
@@ -387,7 +410,8 @@ private fun LabeledDropdown(
     value: String,
     options: List<String>,
     enabled: Boolean,
-    onSelect: (String) -> Unit
+    onSelect: (String) -> Unit,
+    groups: List<Pair<String, List<String>>>? = null
 ) {
     val shape = RoundedCornerShape(16.dp)
     val density = LocalDensity.current
@@ -424,24 +448,128 @@ private fun LabeledDropdown(
                     .width(anchorWidth)
                     .background(ColorSurface)
             ) {
-                options.forEach { option ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = option,
-                                color = if (option == value) ColorLive else Color.White,
-                                fontSize = 16.sp
-                            )
-                        },
-                        onClick = {
-                            onSelect(option)
-                            expanded = false
-                        }
-                    )
+                val sections = groups ?: listOf("" to options)
+                sections.forEach { (title, items) ->
+                    if (title.isNotEmpty()) {
+                        Text(
+                            text = title,
+                            color = ColorMuted,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                        )
+                    }
+                    items.forEach { option ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = option,
+                                    color = if (option == value) ColorLive else Color.White,
+                                    fontSize = 16.sp
+                                )
+                            },
+                            onClick = {
+                                onSelect(option)
+                                expanded = false
+                            }
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun AdvancedButton(summary: String, enabled: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(ColorSurface, shape)
+            .border(1.dp, ColorBorder, shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "Advanced",
+            color = if (enabled) Color.White else ColorMuted,
+            fontSize = 16.sp
+        )
+        Text(text = summary, color = ColorMuted, fontSize = 13.sp, maxLines = 1)
+    }
+}
+
+@Composable
+private fun BitrateField(label: String, value: String, enabled: Boolean, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { onChange(it.filter { c -> c.isDigit() || c == '.' }) },
+        label = { Text(label) },
+        enabled = enabled,
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        modifier = Modifier.fillMaxWidth(),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedTextColor = Color.White,
+            unfocusedTextColor = Color.White,
+            disabledTextColor = ColorMuted,
+            focusedBorderColor = ColorAccent,
+            unfocusedBorderColor = ColorBorder,
+            disabledBorderColor = ColorBorder,
+            focusedLabelColor = ColorMuted,
+            unfocusedLabelColor = ColorMuted,
+            disabledLabelColor = ColorMuted,
+            cursorColor = Color.White
+        )
+    )
+}
+
+@Composable
+private fun AdvancedDialog(
+    codecs: List<String>,
+    codec: String,
+    onCodec: (String) -> Unit,
+    auto: Boolean,
+    onAuto: (Boolean) -> Unit,
+    bitrate: String,
+    onBitrate: (String) -> Unit,
+    maxBitrate: String,
+    onMaxBitrate: (String) -> Unit,
+    minBitrate: String,
+    onMinBitrate: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = ColorSurface,
+        title = { Text("Advanced", color = Color.White) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                LabeledDropdown("Codec", codec, codecs, codecs.isNotEmpty(), onCodec)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Auto bitrate (high quality)", color = Color.White, fontSize = 15.sp)
+                    Switch(checked = auto, onCheckedChange = onAuto)
+                }
+                BitrateField("Bitrate (Mbps)", bitrate, !auto, onBitrate)
+                BitrateField("Max bitrate (Mbps)", maxBitrate, !auto, onMaxBitrate)
+                BitrateField("Min bitrate (Mbps)", minBitrate, !auto, onMinBitrate)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done", color = ColorAccent) }
+        }
+    )
 }
 
 @Composable
@@ -453,17 +581,29 @@ private fun Controls(
     onResolution: (String) -> Unit,
     fps: String,
     onFps: (String) -> Unit,
+    resolutionGroups: List<Pair<String, List<String>>>,
+    fpsOptions: List<String>,
     connection: String,
     onConnection: (String) -> Unit,
     address: String,
+    advancedSummary: String,
+    onAdvanced: () -> Unit,
     enabled: Boolean,
     modifier: Modifier = Modifier
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         LabeledDropdown("Camera", camera, cameraOptions, enabled && cameraOptions.isNotEmpty(), onCamera)
-        LabeledDropdown("Resolution", resolution, ResolutionOptions, enabled, onResolution)
-        LabeledDropdown("Frame rate (FPS)", fps, FpsOptions, enabled, onFps)
+        LabeledDropdown(
+            "Resolution",
+            resolution,
+            resolutionGroups.flatMap { it.second },
+            enabled,
+            onResolution,
+            resolutionGroups
+        )
+        LabeledDropdown("Frame rate (FPS)", fps, fpsOptions, enabled, onFps)
         LabeledDropdown("Connection method", connection, ConnectionOptions, enabled, onConnection)
+        AdvancedButton(advancedSummary, enabled, onAdvanced)
         Text(text = address, color = ColorMuted, fontSize = 13.sp)
     }
 }
@@ -492,8 +632,8 @@ private fun StartButton(streaming: Boolean, onClick: () -> Unit) {
 
 @Composable
 fun CameraServerLandscape(modifier: Modifier = Modifier) {
-    var resolution by rememberSaveable { mutableStateOf("1920x1080") }
-    var fps by rememberSaveable { mutableStateOf("60 FPS") }
+    var savedResolution by rememberSaveable { mutableStateOf<String?>(null) }
+    var savedFps by rememberSaveable { mutableStateOf<String?>(null) }
     var connection by rememberSaveable { mutableStateOf("USB") }
     var serverState by remember { mutableStateOf(ServerState.Stopped) }
     var serverInfo by remember { mutableStateOf<String?>(null) }
@@ -562,6 +702,69 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
         }
     }
     val cameraLabel = activeCamera?.label ?: "No camera"
+    val allSizes = remember(backend, activeCamera?.id) {
+        backend?.sizes(activeCamera?.id).orEmpty().ifEmpty { FallbackSizes }
+    }
+    val resolutionGroups = remember(allSizes) {
+        groupByAspect(allSizes).map { group ->
+            group.ratio to group.sizes.map { "${it.width}x${it.height}" }
+        }
+    }
+    val resolution = savedResolution?.takeIf { saved -> resolutionGroups.any { saved in it.second } }
+        ?: defaultSize(allSizes)?.let { "${it.width}x${it.height}" }
+        ?: "1280x720"
+    val selectedSize = allSizes.firstOrNull { "${it.width}x${it.height}" == resolution }
+    val fpsValues = remember(backend, activeCamera?.id, resolution) {
+        backend?.fpsOptions(activeCamera?.id, selectedSize).orEmpty().ifEmpty { FallbackFps }
+    }
+    val fpsLabels = remember(fpsValues) { fpsValues.map { "$it FPS" } }
+    val fps = savedFps?.takeIf { it in fpsLabels }
+        ?: defaultFps(fpsValues)?.let { "$it FPS" }
+        ?: "30 FPS"
+    val previewConfig = CameraConfig(
+        selectedSize?.width ?: 1280,
+        selectedSize?.height ?: 720,
+        activeCamera?.id,
+        fps.removeSuffix(" FPS").toIntOrNull() ?: 30
+    )
+    val codecs = remember { EncoderSupport.supportedCodecs() }
+    var savedCodec by rememberSaveable { mutableStateOf<String?>(null) }
+    val codec = codecs.firstOrNull { it.label == savedCodec } ?: codecs.firstOrNull()
+    var autoBitrate by rememberSaveable { mutableStateOf(true) }
+    var manualBitrate by rememberSaveable { mutableStateOf("") }
+    var manualMax by rememberSaveable { mutableStateOf("") }
+    var manualMin by rememberSaveable { mutableStateOf("") }
+    var showAdvanced by rememberSaveable { mutableStateOf(false) }
+    val autoSettings = remember(codec, previewConfig) {
+        codec?.let {
+            EncoderSupport.autoBitrate(it, previewConfig.width, previewConfig.height, previewConfig.fps)
+        }
+    }
+    val advancedSummary = (codec?.label ?: "No encoder") + ", " +
+        if (autoBitrate) "auto" else "$manualBitrate Mbps"
+    if (showAdvanced) {
+        AdvancedDialog(
+            codecs = codecs.map { it.label },
+            codec = codec?.label ?: "No encoder",
+            onCodec = { savedCodec = it },
+            auto = autoBitrate,
+            onAuto = { on ->
+                if (!on && autoSettings != null) {
+                    manualBitrate = EncoderSupport.formatMbps(autoSettings.bitrate)
+                    manualMax = EncoderSupport.formatMbps(autoSettings.max)
+                    manualMin = EncoderSupport.formatMbps(autoSettings.min)
+                }
+                autoBitrate = on
+            },
+            bitrate = if (autoBitrate) autoSettings?.let { EncoderSupport.formatMbps(it.bitrate) }.orEmpty() else manualBitrate,
+            onBitrate = { manualBitrate = it },
+            maxBitrate = if (autoBitrate) autoSettings?.let { EncoderSupport.formatMbps(it.max) }.orEmpty() else manualMax,
+            onMaxBitrate = { manualMax = it },
+            minBitrate = if (autoBitrate) autoSettings?.let { EncoderSupport.formatMbps(it.min) }.orEmpty() else manualMin,
+            onMinBitrate = { manualMin = it },
+            onDismiss = { showAdvanced = false }
+        )
+    }
 
     BoxWithConstraints(
         modifier = modifier
@@ -582,7 +785,7 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
                     backend = backend,
                     hasPermission = hasPermission,
                     error = cameraError,
-                    cameraId = activeCamera?.id,
+                    config = previewConfig,
                     zoom = zoom,
                     maxZoom = maxZoom,
                     onZoom = { zoom = it },
@@ -603,12 +806,16 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
                         cameraOptions = cameraLabels,
                         onCamera = onCamera,
                         resolution = resolution,
-                        onResolution = { resolution = it },
+                        onResolution = { savedResolution = it },
                         fps = fps,
-                        onFps = { fps = it },
+                        onFps = { savedFps = it },
+                        resolutionGroups = resolutionGroups,
+                        fpsOptions = fpsLabels,
                         connection = connection,
                         onConnection = { connection = it },
                         address = address,
+                        advancedSummary = advancedSummary,
+                        onAdvanced = { showAdvanced = true },
                         enabled = !streaming,
                         modifier = Modifier
                             .weight(1f)
@@ -630,7 +837,7 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
                     backend = backend,
                     hasPermission = hasPermission,
                     error = cameraError,
-                    cameraId = activeCamera?.id,
+                    config = previewConfig,
                     zoom = zoom,
                     maxZoom = maxZoom,
                     onZoom = { zoom = it },
@@ -646,12 +853,16 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
                     cameraOptions = cameraLabels,
                     onCamera = onCamera,
                     resolution = resolution,
-                    onResolution = { resolution = it },
+                    onResolution = { savedResolution = it },
                     fps = fps,
-                    onFps = { fps = it },
+                    onFps = { savedFps = it },
+                    resolutionGroups = resolutionGroups,
+                    fpsOptions = fpsLabels,
                     connection = connection,
                     onConnection = { connection = it },
                     address = address,
+                    advancedSummary = advancedSummary,
+                    onAdvanced = { showAdvanced = true },
                     enabled = !streaming
                 )
                 StartButton(streaming, toggleServer)

@@ -39,6 +39,41 @@ class Camera1Backend : CameraBackend {
         return 0
     }
 
+    private val capsCache = mutableMapOf<Int, Pair<List<Size>, List<Int>>>()
+
+    private fun capsOf(params: android.hardware.Camera.Parameters): Pair<List<Size>, List<Int>> {
+        val sizes = params.supportedPreviewSizes.orEmpty().map { Size(it.width, it.height) }
+        val fps = params.supportedPreviewFpsRange.orEmpty().map { it[1] / 1000 }.distinct().sorted()
+        return sizes to fps
+    }
+
+    private fun resolveId(requested: String?): Int {
+        val count = android.hardware.Camera.getNumberOfCameras()
+        val parsed = requested?.toIntOrNull()
+        return if (parsed != null && parsed in 0 until count) parsed else pickCameraId()
+    }
+
+    private fun caps(id: Int): Pair<List<Size>, List<Int>> {
+        capsCache[id]?.let { return it }
+        if (id < 0) return emptyList<Size>() to emptyList<Int>()
+        val temp = try {
+            android.hardware.Camera.open(id)
+        } catch (e: Exception) {
+            return emptyList<Size>() to emptyList<Int>()
+        }
+        return try {
+            capsOf(temp.parameters).also { capsCache[id] = it }
+        } catch (e: Exception) {
+            emptyList<Size>() to emptyList<Int>()
+        } finally {
+            runCatching { temp.release() }
+        }
+    }
+
+    override fun sizes(cameraId: String?): List<Size> = caps(resolveId(cameraId)).first
+
+    override fun fpsOptions(cameraId: String?, size: Size?): List<Int> = caps(resolveId(cameraId)).second
+
     override fun cameras(): List<CameraOption> {
         val count = android.hardware.Camera.getNumberOfCameras()
         val cameraInfo = android.hardware.Camera.CameraInfo()
@@ -78,11 +113,16 @@ class Camera1Backend : CameraBackend {
             val cameraInfo = android.hardware.Camera.CameraInfo()
             android.hardware.Camera.getCameraInfo(id, cameraInfo)
             val params = opened.parameters
+            capsCache[id] = capsOf(params)
             val chosen = chooseSize(
                 params.supportedPreviewSizes.map { Size(it.width, it.height) },
                 config
             )
             params.setPreviewSize(chosen.width, chosen.height)
+            params.supportedPreviewFpsRange.orEmpty()
+                .filter { it[1] == config.fps * 1000 }
+                .maxByOrNull { it[0] }
+                ?.let { params.setPreviewFpsRange(it[0], it[1]) }
             if (params.supportedFocusModes?.contains(FOCUS_VIDEO) == true) {
                 params.focusMode = FOCUS_VIDEO
             }
