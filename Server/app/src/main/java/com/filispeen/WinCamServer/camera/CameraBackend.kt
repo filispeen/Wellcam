@@ -16,7 +16,8 @@ data class CameraConfig(
     val width: Int,
     val height: Int,
     val cameraId: String? = null,
-    val fps: Int = 30
+    val fps: Int = 30,
+    val encoderSurface: android.view.Surface? = null
 )
 
 data class CameraOption(val id: String, val label: String)

@@ -3,7 +3,10 @@ package com.filispeen.WinCamServer
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.os.Handler
+import android.os.Looper
 import android.util.Size
+import android.view.Surface
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -88,6 +91,7 @@ import com.filispeen.WinCamServer.camera.CameraPreview
 import com.filispeen.WinCamServer.transport.LocalAddresses
 import com.filispeen.WinCamServer.transport.ServerState
 import com.filispeen.WinCamServer.transport.TcpServer
+import com.filispeen.WinCamServer.transport.VideoStreamer
 
 private val ColorBg = Color(0xFF0E0E12)
 private val ColorSurface = Color(0xFF1C1C22)
@@ -644,6 +648,9 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
         }
     }
     DisposableEffect(server) { onDispose { server.stop() } }
+    val streamer = remember(server) { VideoStreamer(server) }
+    DisposableEffect(streamer) { onDispose { streamer.stop() } }
+    var encoderSurface by remember { mutableStateOf<Surface?>(null) }
     val streaming = serverState == ServerState.Listening || serverState == ServerState.Connected
     val toggleServer: () -> Unit = { if (streaming) server.stop() else server.start() }
     val localAddress = remember(connection, serverState) { LocalAddresses.find(connection) }
@@ -740,6 +747,29 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
             EncoderSupport.autoBitrate(it, previewConfig.width, previewConfig.height, previewConfig.fps)
         }
     }
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    DisposableEffect(streaming, backend, codec, autoSettings, autoBitrate, previewConfig) {
+        val canStream = streaming && codec != null && autoSettings != null && backend?.api == "Camera2"
+        if (canStream) {
+            encoderSurface = try {
+                streamer.start(
+                    codec!!,
+                    previewConfig.width,
+                    previewConfig.height,
+                    previewConfig.fps,
+                    autoSettings!!,
+                    autoBitrate
+                ) { message -> mainHandler.post { cameraError = message } }
+            } catch (e: Exception) {
+                cameraError = e.message ?: "Encoder start failed"
+                null
+            }
+        } else {
+            encoderSurface = null
+        }
+        onDispose { streamer.stop() }
+    }
+    val cameraConfig = previewConfig.copy(encoderSurface = encoderSurface)
     val advancedSummary = (codec?.label ?: "No encoder") + ", " +
         if (autoBitrate) "auto" else "$manualBitrate Mbps"
     if (showAdvanced) {
@@ -785,7 +815,7 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
                     backend = backend,
                     hasPermission = hasPermission,
                     error = cameraError,
-                    config = previewConfig,
+                    config = cameraConfig,
                     zoom = zoom,
                     maxZoom = maxZoom,
                     onZoom = { zoom = it },
@@ -837,7 +867,7 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
                     backend = backend,
                     hasPermission = hasPermission,
                     error = cameraError,
-                    config = previewConfig,
+                    config = cameraConfig,
                     zoom = zoom,
                     maxZoom = maxZoom,
                     onZoom = { zoom = it },

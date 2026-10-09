@@ -33,6 +33,7 @@ class Camera2Backend(private val context: Context) : CameraBackend {
     private var device: CameraDevice? = null
     private var session: CameraCaptureSession? = null
     private var surface: Surface? = null
+    private var encoderSurface: Surface? = null
     private var view: TextureView? = null
     private var size: Size? = null
     private var sensorOrientation = 90
@@ -166,6 +167,7 @@ class Camera2Backend(private val context: Context) : CameraBackend {
                 thread = newThread
                 handler = newHandler
                 surface = Surface(texture)
+                encoderSurface = config.encoderSurface
                 this.view = view
                 size = chosen
                 sensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
@@ -230,9 +232,11 @@ class Camera2Backend(private val context: Context) : CameraBackend {
             camera.close()
             return
         }
+        val extra = synchronized(lock) { encoderSurface }
+        val targets = listOfNotNull(target, extra)
         try {
             camera.createCaptureSession(
-                listOf(target),
+                targets,
                 object : CameraCaptureSession.StateCallback() {
                     override fun onConfigured(configured: CameraCaptureSession) {
                         val stale = synchronized(lock) {
@@ -249,8 +253,13 @@ class Camera2Backend(private val context: Context) : CameraBackend {
                         }
                         try {
                             val request = synchronized(lock) {
-                                val builder = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-                                builder.addTarget(target)
+                                val template = if (extra != null) {
+                                    CameraDevice.TEMPLATE_RECORD
+                                } else {
+                                    CameraDevice.TEMPLATE_PREVIEW
+                                }
+                                val builder = camera.createCaptureRequest(template)
+                                targets.forEach { builder.addTarget(it) }
                                 afMode?.let { builder.set(CaptureRequest.CONTROL_AF_MODE, it) }
                                 fpsRange?.let { builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it) }
                                 applyZoom(builder)
@@ -350,6 +359,7 @@ class Camera2Backend(private val context: Context) : CameraBackend {
             thread = null
             handler = null
             surface = null
+            encoderSurface = null
             view = null
             size = null
             previewBuilder = null
