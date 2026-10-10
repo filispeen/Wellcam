@@ -1,6 +1,7 @@
 package com.filispeen.WinCamServer
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Handler
@@ -92,6 +93,7 @@ import com.filispeen.WinCamServer.transport.LocalAddresses
 import com.filispeen.WinCamServer.transport.ServerState
 import com.filispeen.WinCamServer.transport.TcpServer
 import com.filispeen.WinCamServer.transport.VideoStreamer
+import kotlinx.coroutines.delay
 
 private val ColorBg = Color(0xFF0E0E12)
 private val ColorSurface = Color(0xFF1C1C22)
@@ -682,7 +684,13 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
     DisposableEffect(streamer) { onDispose { streamer.stop() } }
     var encoderSurface by remember { mutableStateOf<Surface?>(null) }
     val streaming = serverState == ServerState.Listening || serverState == ServerState.Connected
-    val localAddress = remember(connection, serverState) { LocalAddresses.find(connection) }
+    var localAddress by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(connection) {
+        while (true) {
+            localAddress = LocalAddresses.find(connection)
+            delay(1000)
+        }
+    }
     val address = if (serverState == ServerState.Error) {
         serverInfo ?: "Error"
     } else {
@@ -810,6 +818,15 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
             streamError = null
             cameraError = null
             server.start()
+            if (connection == "USB" && LocalAddresses.find("USB") == null) {
+                try {
+                    context.startActivity(
+                        Intent("android.settings.TETHER_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                } catch (e: Exception) {
+                    streamError = "Enable USB tethering in system settings"
+                }
+            }
         }
     }
     val rotation = remember(backend, activeCamera?.id) {
