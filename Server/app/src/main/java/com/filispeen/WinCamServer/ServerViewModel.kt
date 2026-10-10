@@ -13,6 +13,7 @@ import com.filispeen.WinCamServer.encoder.VideoCodec
 import com.filispeen.WinCamServer.transport.ServerState
 import com.filispeen.WinCamServer.transport.TcpServer
 import com.filispeen.WinCamServer.transport.VideoStreamer
+import com.filispeen.WinCamServer.transport.VideoTransport
 
 const val ServerPort = 11203
 
@@ -42,7 +43,7 @@ class ServerViewModel : ViewModel() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var spec: EncoderSpec? = null
 
-    private val server = TcpServer(ServerPort) { state, info ->
+    private val server: VideoTransport = TcpServer(ServerPort) { state, info ->
         if (state == ServerState.Listening && serverState == ServerState.Connected) clientDropped = true
         if (state != ServerState.Listening) clientDropped = false
         if (state == ServerState.Connected) streamError = null

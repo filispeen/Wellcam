@@ -12,22 +12,15 @@ import java.net.Socket
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicInteger
 
-enum class ServerState { Stopped, Listening, Connected, Error }
-
-interface ClientListener {
-    fun onClientConnected()
-    fun onClientDisconnected()
-}
-
 private const val WriteTimeoutMs = 3000L
 private const val MaxPendingBytes = 8 * 1024 * 1024
 
 class TcpServer(
     private val port: Int,
     private val onState: (ServerState, String?) -> Unit
-) {
+) : VideoTransport {
     @Volatile
-    var clientListener: ClientListener? = null
+    override var clientListener: ClientListener? = null
 
     private val main = Handler(Looper.getMainLooper())
     private val lock = Any()
@@ -36,7 +29,7 @@ class TcpServer(
     private var client: Socket? = null
     private var writer: Writer? = null
 
-    fun start() {
+    override fun start() {
         val t = Any()
         synchronized(lock) {
             if (token != null) return
@@ -45,7 +38,7 @@ class TcpServer(
         Thread({ acceptLoop(t) }, "wincam-accept").apply { isDaemon = true }.start()
     }
 
-    fun stop() {
+    override fun stop() {
         synchronized(lock) {
             if (token == null) return
             token = null
@@ -56,11 +49,11 @@ class TcpServer(
         post(null, ServerState.Stopped, null)
     }
 
-    fun isRunning(): Boolean = synchronized(lock) { token != null }
+    override fun isRunning(): Boolean = synchronized(lock) { token != null }
 
-    fun pendingBytes(): Int = synchronized(lock) { writer }?.pending() ?: 0
+    override fun pendingBytes(): Int = synchronized(lock) { writer }?.pending() ?: 0
 
-    fun send(data: ByteArray, offset: Int = 0, length: Int = data.size): Boolean {
+    override fun send(data: ByteArray, offset: Int, length: Int): Boolean {
         val w = synchronized(lock) { writer } ?: return false
         return w.enqueue(data, offset, length)
     }
