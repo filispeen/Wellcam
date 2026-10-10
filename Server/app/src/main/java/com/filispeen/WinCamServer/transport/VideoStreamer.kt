@@ -1,9 +1,13 @@
 package com.filispeen.WinCamServer.transport
 
+import android.os.SystemClock
 import android.view.Surface
 import com.filispeen.WinCamServer.encoder.BitrateSettings
 import com.filispeen.WinCamServer.encoder.VideoCodec
 import com.filispeen.WinCamServer.encoder.VideoEncoder
+
+private const val BacklogLimit = 2 * 1024 * 1024
+private const val SyncRetryMs = 500L
 
 class VideoStreamer(private val server: TcpServer) : ClientListener {
     private val lock = Any()
@@ -13,6 +17,7 @@ class VideoStreamer(private val server: TcpServer) : ClientListener {
     private var clientPresent = false
     private var ready = false
     private var waitingKey = false
+    private var lastSyncMs = 0L
 
     init {
         server.clientListener = this
@@ -89,16 +94,25 @@ class VideoStreamer(private val server: TcpServer) : ClientListener {
     }
 
     private fun handleFrame(bytes: ByteArray, key: Boolean, ptsUs: Long) {
+        var syncTarget: VideoEncoder? = null
         synchronized(lock) {
             if (!ready) return
-            if (waitingKey) {
-                if (!key) return
+            val congested = server.pendingBytes() > BacklogLimit
+            if (congested) waitingKey = true
+            if (waitingKey && (congested || !key)) {
+                val now = SystemClock.elapsedRealtime()
+                if (!congested && now - lastSyncMs > SyncRetryMs) {
+                    lastSyncMs = now
+                    syncTarget = encoder
+                }
+            } else {
                 waitingKey = false
+                val flags = if (key) Protocol.FLAG_KEYFRAME else 0
+                val packet = Protocol.packet(Protocol.TYPE_FRAME, flags, ptsUs, bytes, 0, bytes.size)
+                if (!server.send(packet)) ready = false
             }
-            val flags = if (key) Protocol.FLAG_KEYFRAME else 0
-            val packet = Protocol.packet(Protocol.TYPE_FRAME, flags, ptsUs, bytes, 0, bytes.size)
-            if (!server.send(packet)) ready = false
         }
+        syncTarget?.requestSync()
     }
 
     private fun sendIntro() {
