@@ -1,7 +1,6 @@
 package com.filispeen.WinCamServer
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Handler
@@ -106,7 +105,9 @@ private val ColorLive = Color(0xFF22C55E)
 
 private val FallbackSizes = listOf(Size(1280, 720), Size(1920, 1080), Size(2560, 1440))
 private val FallbackFps = listOf(24, 30, 60)
-private val ConnectionOptions = listOf("USB", "Wi-Fi")
+private const val AdbConnection = "USB (ADB)"
+private const val WifiConnection = "Wi-Fi"
+private val ConnectionOptions = listOf(AdbConnection, WifiConnection)
 private const val ServerPort = 11203
 
 private class UnitShape(
@@ -661,7 +662,7 @@ private fun StartButton(streaming: Boolean, onClick: () -> Unit) {
 fun CameraServerLandscape(modifier: Modifier = Modifier) {
     var savedResolution by rememberSaveable { mutableStateOf<String?>(null) }
     var savedFps by rememberSaveable { mutableStateOf<String?>(null) }
-    var connection by rememberSaveable { mutableStateOf("USB") }
+    var connection by rememberSaveable { mutableStateOf(AdbConnection) }
     var serverState by remember { mutableStateOf(ServerState.Stopped) }
     var serverInfo by remember { mutableStateOf<String?>(null) }
     var streamError by remember { mutableStateOf<String?>(null) }
@@ -686,15 +687,19 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
     val streaming = serverState == ServerState.Listening || serverState == ServerState.Connected
     var localAddress by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(connection) {
-        while (true) {
-            localAddress = LocalAddresses.find(connection)
-            delay(1000)
+        if (connection == AdbConnection) {
+            localAddress = null
+        } else {
+            while (true) {
+                localAddress = LocalAddresses.find()
+                delay(1000)
+            }
         }
     }
-    val address = if (serverState == ServerState.Error) {
-        serverInfo ?: "Error"
-    } else {
-        localAddress?.let { "$it:$ServerPort" } ?: "No $connection address"
+    val address = when {
+        serverState == ServerState.Error -> serverInfo ?: "Error"
+        connection == AdbConnection -> "localhost:$ServerPort (adb forward)"
+        else -> localAddress?.let { "$it:$ServerPort" } ?: "No Wi-Fi address"
     }
     val statusLabel = when (serverState) {
         ServerState.Stopped -> "Stopped"
@@ -818,15 +823,6 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
             streamError = null
             cameraError = null
             server.start()
-            if (connection == "USB" && LocalAddresses.find("USB") == null) {
-                try {
-                    context.startActivity(
-                        Intent("android.settings.TETHER_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                } catch (e: Exception) {
-                    streamError = "Enable USB tethering in system settings"
-                }
-            }
         }
     }
     val rotation = remember(backend, activeCamera?.id) {

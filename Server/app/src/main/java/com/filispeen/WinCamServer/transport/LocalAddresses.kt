@@ -5,12 +5,8 @@ import java.net.NetworkInterface
 
 object LocalAddresses {
     private val wifiPrefixes = listOf("wlan", "swlan", "ap")
-    private val usbPrefixes = listOf("usb", "rndis", "ncm", "eth")
 
-    fun find(connection: String): String? =
-        find(if (connection == "USB") usbPrefixes else wifiPrefixes)
-
-    private fun find(prefixes: List<String>): String? {
+    fun find(): String? {
         val raw = try {
             NetworkInterface.getNetworkInterfaces()?.toList()
         } catch (e: Exception) {
@@ -24,7 +20,7 @@ object LocalAddresses {
                 } catch (e: Exception) {
                     false
                 }
-                usable && prefixes.any { nif.name.startsWith(it) }
+                usable && wifiPrefixes.any { nif.name.startsWith(it) }
             }
             .flatMap { it.inetAddresses.toList() }
             .firstOrNull { it is Inet4Address && !it.isLoopbackAddress }
