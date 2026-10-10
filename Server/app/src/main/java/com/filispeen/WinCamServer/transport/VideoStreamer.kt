@@ -23,6 +23,7 @@ class VideoStreamer(private val server: TcpServer) : ClientListener {
         width: Int,
         height: Int,
         fps: Int,
+        rotation: Int,
         bitrate: BitrateSettings,
         constantBitrate: Boolean,
         onError: (String) -> Unit
@@ -42,7 +43,7 @@ class VideoStreamer(private val server: TcpServer) : ClientListener {
         val surface = created.start()
         synchronized(lock) {
             encoder = created
-            header = Protocol.header(codec, width, height, fps)
+            header = Protocol.header(codec, width, height, fps, rotation)
             config = null
             ready = false
             waitingKey = false

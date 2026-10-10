@@ -40,6 +40,20 @@ object CameraBackends {
     fun create(context: Context): CameraBackend =
         if (camera2Id(context) != null) Camera2Backend(context) else Camera1Backend()
 
+    fun sensorOrientation(context: Context, cameraId: String?): Int {
+        val manager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager ?: return 0
+        return try {
+            val id = if (cameraId != null && manager.cameraIdList.contains(cameraId)) {
+                cameraId
+            } else {
+                camera2Id(context)
+            }
+            id?.let { manager.getCameraCharacteristics(it).get(CameraCharacteristics.SENSOR_ORIENTATION) } ?: 0
+        } catch (e: Exception) {
+            0
+        }
+    }
+
     fun camera2Id(context: Context): String? {
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager ?: return null
         return try {

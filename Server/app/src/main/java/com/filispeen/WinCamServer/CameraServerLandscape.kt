@@ -781,7 +781,10 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
             server.start()
         }
     }
-    DisposableEffect(streaming, backend, codec, settings, constantBitrate, previewConfig) {
+    val rotation = remember(backend, activeCamera?.id) {
+        if (backend == null) 0 else CameraBackends.sensorOrientation(context, activeCamera?.id)
+    }
+    DisposableEffect(streaming, backend, codec, settings, constantBitrate, previewConfig, rotation) {
         val canStream = streaming && codec != null && settings != null && backend?.api == "Camera2"
         if (canStream) {
             encoderSurface = try {
@@ -790,6 +793,7 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
                     previewConfig.width,
                     previewConfig.height,
                     previewConfig.fps,
+                    rotation,
                     settings,
                     constantBitrate
                 ) { message -> mainHandler.post { cameraError = message } }
