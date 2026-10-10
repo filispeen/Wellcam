@@ -627,6 +627,13 @@ private fun Controls(
 }
 
 @Composable
+private fun StreamMessage(message: String?) {
+    if (message != null) {
+        Text(message, color = ColorStop, fontSize = 13.sp, modifier = Modifier.fillMaxWidth())
+    }
+}
+
+@Composable
 private fun StartButton(streaming: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(18.dp)
     Box(
@@ -655,11 +662,20 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
     var connection by rememberSaveable { mutableStateOf("USB") }
     var serverState by remember { mutableStateOf(ServerState.Stopped) }
     var serverInfo by remember { mutableStateOf<String?>(null) }
+    var streamError by remember { mutableStateOf<String?>(null) }
+    var clientDropped by remember { mutableStateOf(false) }
     val server = remember {
         TcpServer(ServerPort) { state, info ->
+            if (state == ServerState.Listening && serverState == ServerState.Connected) clientDropped = true
+            if (state != ServerState.Listening) clientDropped = false
+            if (state == ServerState.Connected) streamError = null
             serverState = state
             serverInfo = info
         }
+    }
+    val failStream: (String) -> Unit = { message ->
+        streamError = message
+        server.stop()
     }
     DisposableEffect(server) { onDispose { server.stop() } }
     val streamer = remember(server) { VideoStreamer(server) }
@@ -674,7 +690,7 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
     }
     val statusLabel = when (serverState) {
         ServerState.Stopped -> "Stopped"
-        ServerState.Listening -> "Listening"
+        ServerState.Listening -> if (clientDropped) "Client disconnected" else "Listening"
         ServerState.Connected -> "Connected: ${serverInfo.orEmpty()}"
         ServerState.Error -> "Error"
     }
@@ -703,7 +719,10 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
             cameraError = null
         }
     }
-    val onCameraError: (String) -> Unit = { cameraError = it }
+    val onCameraError: (String) -> Unit = { message ->
+        cameraError = message
+        if (server.isRunning()) failStream("Camera: $message")
+    }
 
     val backend = remember(context, inspection) {
         if (inspection) null else CameraBackends.create(context)
@@ -772,11 +791,23 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
         else -> EncoderSupport.validate(codec, manualSettings)
     }
     val toggleServer: () -> Unit = {
+        val problem = when {
+            streaming -> null
+            !hasPermission -> "Camera permission is required"
+            backend == null || cameraOptions.isEmpty() -> "No camera available"
+            backend.api != "Camera2" -> "Streaming needs Camera2, not supported on this device"
+            codec == null -> "No video encoder available"
+            bitrateError != null -> "Bitrate: $bitrateError"
+            else -> null
+        }
         if (streaming) {
+            streamError = null
             server.stop()
-        } else if (bitrateError != null) {
-            cameraError = "Bitrate: $bitrateError"
+        } else if (problem != null) {
+            streamError = problem
+            if (!hasPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
         } else {
+            streamError = null
             cameraError = null
             server.start()
         }
@@ -796,9 +827,9 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
                     rotation,
                     settings,
                     constantBitrate
-                ) { message -> mainHandler.post { cameraError = message } }
+                ) { message -> mainHandler.post { failStream(message) } }
             } catch (e: Exception) {
-                cameraError = e.message ?: "Encoder start failed"
+                failStream(e.message ?: "Encoder start failed")
                 null
             }
         } else {
@@ -893,6 +924,7 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
                             .weight(1f)
                             .verticalScroll(rememberScrollState())
                     )
+                    StreamMessage(streamError)
                     StartButton(streaming, toggleServer)
                 }
             }
@@ -937,6 +969,7 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
                     onAdvanced = { showAdvanced = true },
                     enabled = !streaming
                 )
+                StreamMessage(streamError)
                 StartButton(streaming, toggleServer)
             }
         }

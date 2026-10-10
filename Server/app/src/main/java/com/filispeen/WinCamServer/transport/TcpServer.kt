@@ -4,6 +4,7 @@ import android.os.Handler
 import android.os.Looper
 import java.io.Closeable
 import java.io.IOException
+import java.net.BindException
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -48,6 +49,8 @@ class TcpServer(
         }
         post(null, ServerState.Stopped, null)
     }
+
+    fun isRunning(): Boolean = synchronized(lock) { token != null }
 
     fun send(data: ByteArray, offset: Int = 0, length: Int = data.size): Boolean {
         val socket = synchronized(lock) { client } ?: return false
@@ -132,7 +135,14 @@ class TcpServer(
             client = null
             server = null
         }
-        post(null, ServerState.Error, e.message ?: "Socket error")
+        val message = when {
+            e is BindException && e.message.orEmpty().let {
+                it.contains("EADDRINUSE") || it.contains("already in use", ignoreCase = true)
+            } -> "Port $port is already in use"
+            e is BindException -> "Cannot bind port $port"
+            else -> e.message ?: "Socket error"
+        }
+        post(null, ServerState.Error, message)
     }
 
     private fun post(t: Any?, state: ServerState, info: String?) {
