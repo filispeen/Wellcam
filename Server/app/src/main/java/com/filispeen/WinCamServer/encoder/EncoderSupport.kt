@@ -5,6 +5,7 @@ import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.util.Range
 import java.util.Locale
+import kotlin.math.roundToInt
 
 enum class VideoCodec(val label: String, val mime: String, val bitsPerPixel: Float) {
     H264("H.264", MediaFormat.MIMETYPE_VIDEO_AVC, 0.20f),
@@ -25,7 +26,7 @@ object EncoderSupport {
     fun supportedCodecs(): List<VideoCodec> =
         VideoCodec.values().filter { encoders(it).isNotEmpty() }
 
-    private fun bitrateRange(codec: VideoCodec): Range<Int>? {
+    fun bitrateRange(codec: VideoCodec): Range<Int>? {
         val ranges = encoders(codec).mapNotNull { info ->
             try {
                 info.getCapabilitiesForType(codec.mime).videoCapabilities?.bitrateRange
@@ -50,4 +51,29 @@ object EncoderSupport {
 
     fun formatMbps(bitsPerSecond: Int): String =
         String.format(Locale.US, "%.1f", bitsPerSecond / 1_000_000f)
+
+    fun parseMbps(text: String): Int? {
+        val value = text.trim().toDoubleOrNull() ?: return null
+        if (value <= 0.0) return null
+        val bits = value * 1_000_000.0
+        if (bits > Int.MAX_VALUE) return null
+        return bits.roundToInt()
+    }
+
+    fun manualSettings(bitrate: String, min: String, max: String): BitrateSettings? {
+        val b = parseMbps(bitrate) ?: return null
+        val lo = parseMbps(min) ?: return null
+        val hi = parseMbps(max) ?: return null
+        return BitrateSettings(b, lo, hi)
+    }
+
+    fun validate(codec: VideoCodec, settings: BitrateSettings): String? {
+        if (settings.min > settings.bitrate) return "Min must not exceed bitrate"
+        if (settings.bitrate > settings.max) return "Bitrate must not exceed max"
+        val range = bitrateRange(codec) ?: return null
+        if (settings.min < range.lower || settings.max > range.upper) {
+            return "Allowed: ${formatMbps(range.lower)} to ${formatMbps(range.upper)} Mbps"
+        }
+        return null
+    }
 }

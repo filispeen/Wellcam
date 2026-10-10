@@ -534,9 +534,13 @@ private fun BitrateField(label: String, value: String, enabled: Boolean, onChang
 
 @Composable
 private fun AdvancedDialog(
+    enabled: Boolean,
     codecs: List<String>,
     codec: String,
     onCodec: (String) -> Unit,
+    constant: Boolean,
+    onConstant: (Boolean) -> Unit,
+    error: String?,
     auto: Boolean,
     onAuto: (Boolean) -> Unit,
     bitrate: String,
@@ -556,18 +560,28 @@ private fun AdvancedDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                LabeledDropdown("Codec", codec, codecs, codecs.isNotEmpty(), onCodec)
+                LabeledDropdown("Codec", codec, codecs, enabled && codecs.isNotEmpty(), onCodec)
+                LabeledDropdown(
+                    "Bitrate mode",
+                    if (constant) "CBR" else "VBR",
+                    listOf("CBR", "VBR"),
+                    enabled,
+                    onSelect = { onConstant(it == "CBR") }
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Auto bitrate (high quality)", color = Color.White, fontSize = 15.sp)
-                    Switch(checked = auto, onCheckedChange = onAuto)
+                    Switch(checked = auto, onCheckedChange = onAuto, enabled = enabled)
                 }
-                BitrateField("Bitrate (Mbps)", bitrate, !auto, onBitrate)
-                BitrateField("Max bitrate (Mbps)", maxBitrate, !auto, onMaxBitrate)
-                BitrateField("Min bitrate (Mbps)", minBitrate, !auto, onMinBitrate)
+                BitrateField("Bitrate (Mbps)", bitrate, enabled && !auto, onBitrate)
+                BitrateField("Max bitrate (Mbps)", maxBitrate, enabled && !auto, onMaxBitrate)
+                BitrateField("Min bitrate (Mbps)", minBitrate, enabled && !auto, onMinBitrate)
+                if (error != null) {
+                    Text(error, color = ColorStop, fontSize = 13.sp)
+                }
             }
         },
         confirmButton = {
@@ -652,7 +666,6 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
     DisposableEffect(streamer) { onDispose { streamer.stop() } }
     var encoderSurface by remember { mutableStateOf<Surface?>(null) }
     val streaming = serverState == ServerState.Listening || serverState == ServerState.Connected
-    val toggleServer: () -> Unit = { if (streaming) server.stop() else server.start() }
     val localAddress = remember(connection, serverState) { LocalAddresses.find(connection) }
     val address = if (serverState == ServerState.Error) {
         serverInfo ?: "Error"
@@ -748,17 +761,37 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
         }
     }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
-    DisposableEffect(streaming, backend, codec, autoSettings, autoBitrate, previewConfig) {
-        val canStream = streaming && codec != null && autoSettings != null && backend?.api == "Camera2"
+    var constantBitrate by rememberSaveable { mutableStateOf(true) }
+    val manualSettings = remember(manualBitrate, manualMin, manualMax) {
+        EncoderSupport.manualSettings(manualBitrate, manualMin, manualMax)
+    }
+    val settings = if (autoBitrate) autoSettings else manualSettings
+    val bitrateError = when {
+        autoBitrate || codec == null -> null
+        manualSettings == null -> "Enter valid numbers in Mbps"
+        else -> EncoderSupport.validate(codec, manualSettings)
+    }
+    val toggleServer: () -> Unit = {
+        if (streaming) {
+            server.stop()
+        } else if (bitrateError != null) {
+            cameraError = "Bitrate: $bitrateError"
+        } else {
+            cameraError = null
+            server.start()
+        }
+    }
+    DisposableEffect(streaming, backend, codec, settings, constantBitrate, previewConfig) {
+        val canStream = streaming && codec != null && settings != null && backend?.api == "Camera2"
         if (canStream) {
             encoderSurface = try {
                 streamer.start(
-                    codec!!,
+                    codec,
                     previewConfig.width,
                     previewConfig.height,
                     previewConfig.fps,
-                    autoSettings!!,
-                    autoBitrate
+                    settings,
+                    constantBitrate
                 ) { message -> mainHandler.post { cameraError = message } }
             } catch (e: Exception) {
                 cameraError = e.message ?: "Encoder start failed"
@@ -770,13 +803,18 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
         onDispose { streamer.stop() }
     }
     val cameraConfig = previewConfig.copy(encoderSurface = encoderSurface)
-    val advancedSummary = (codec?.label ?: "No encoder") + ", " +
-        if (autoBitrate) "auto" else "$manualBitrate Mbps"
+    val modeLabel = if (constantBitrate) "CBR" else "VBR"
+    val advancedSummary = (codec?.label ?: "No encoder") + ", " + modeLabel + ", " +
+        if (autoBitrate) "auto" else if (bitrateError != null) "invalid bitrate" else "$manualBitrate Mbps"
     if (showAdvanced) {
         AdvancedDialog(
+            enabled = !streaming,
             codecs = codecs.map { it.label },
             codec = codec?.label ?: "No encoder",
             onCodec = { savedCodec = it },
+            constant = constantBitrate,
+            onConstant = { constantBitrate = it },
+            error = bitrateError,
             auto = autoBitrate,
             onAuto = { on ->
                 if (!on && autoSettings != null) {
