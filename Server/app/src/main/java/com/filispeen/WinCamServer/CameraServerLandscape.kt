@@ -105,7 +105,7 @@ private val ColorLive = Color(0xFF22C55E)
 private val FallbackSizes = listOf(Size(1280, 720), Size(1920, 1080), Size(2560, 1440))
 private val FallbackFps = listOf(24, 30, 60)
 private val ConnectionOptions = listOf("USB", "Wi-Fi")
-private const val ServerPort = 11203 // multiply by 617 then figure out this easter egg
+private const val ServerPort = 11203
 
 private class UnitShape(
     val x: Float,
