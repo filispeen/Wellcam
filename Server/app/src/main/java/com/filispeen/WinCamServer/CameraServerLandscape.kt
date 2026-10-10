@@ -3,10 +3,7 @@ package com.filispeen.WinCamServer
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.res.Configuration
-import android.os.Handler
-import android.os.Looper
 import android.util.Size
-import android.view.Surface
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -46,10 +43,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.ui.text.input.KeyboardType
 import com.filispeen.WinCamServer.encoder.EncoderSupport
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -90,8 +85,6 @@ import com.filispeen.WinCamServer.camera.groupByAspect
 import com.filispeen.WinCamServer.camera.CameraPreview
 import com.filispeen.WinCamServer.transport.LocalAddresses
 import com.filispeen.WinCamServer.transport.ServerState
-import com.filispeen.WinCamServer.transport.TcpServer
-import com.filispeen.WinCamServer.transport.VideoStreamer
 import kotlinx.coroutines.delay
 
 private val ColorBg = Color(0xFF0E0E12)
@@ -108,7 +101,6 @@ private val FallbackFps = listOf(24, 30, 60)
 private const val AdbConnection = "USB (ADB)"
 private const val WifiConnection = "Wi-Fi"
 private val ConnectionOptions = listOf(AdbConnection, WifiConnection)
-private const val ServerPort = 11203
 
 private class UnitShape(
     val x: Float,
@@ -659,31 +651,16 @@ private fun StartButton(streaming: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-fun CameraServerLandscape(modifier: Modifier = Modifier) {
+fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modifier) {
     var savedResolution by rememberSaveable { mutableStateOf<String?>(null) }
     var savedFps by rememberSaveable { mutableStateOf<String?>(null) }
     var connection by rememberSaveable { mutableStateOf(AdbConnection) }
-    var serverState by remember { mutableStateOf(ServerState.Stopped) }
-    var serverInfo by remember { mutableStateOf<String?>(null) }
-    var streamError by remember { mutableStateOf<String?>(null) }
-    var clientDropped by remember { mutableStateOf(false) }
-    val server = remember {
-        TcpServer(ServerPort) { state, info ->
-            if (state == ServerState.Listening && serverState == ServerState.Connected) clientDropped = true
-            if (state != ServerState.Listening) clientDropped = false
-            if (state == ServerState.Connected) streamError = null
-            serverState = state
-            serverInfo = info
-        }
-    }
-    val failStream: (String) -> Unit = { message ->
-        streamError = message
-        server.stop()
-    }
-    DisposableEffect(server) { onDispose { server.stop() } }
-    val streamer = remember(server) { VideoStreamer(server) }
-    DisposableEffect(streamer) { onDispose { streamer.stop() } }
-    var encoderSurface by remember { mutableStateOf<Surface?>(null) }
+    val serverState = viewModel.serverState
+    val serverInfo = viewModel.serverInfo
+    val clientDropped = viewModel.clientDropped
+    val encoderSurface = viewModel.encoderSurface
+    var streamError by viewModel::streamError
+    val failStream: (String) -> Unit = viewModel::failStream
     val streaming = serverState == ServerState.Listening || serverState == ServerState.Connected
     var localAddress by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(connection) {
@@ -734,7 +711,7 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
     }
     val onCameraError: (String) -> Unit = { message ->
         cameraError = message
-        if (server.isRunning()) failStream("Camera: $message")
+        if (viewModel.isServerRunning()) failStream("Camera: $message")
     }
 
     val backend = remember(context, inspection) {
@@ -745,8 +722,8 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
     var savedCameraId by rememberSaveable { mutableStateOf<String?>(null) }
     val activeCamera = cameraOptions.firstOrNull { it.id == savedCameraId }
         ?: cameraOptions.firstOrNull()
-    var zoom by remember { mutableFloatStateOf(1f) }
-    var maxZoom by remember { mutableFloatStateOf(1f) }
+    var zoom by viewModel::zoom
+    var maxZoom by viewModel::maxZoom
     val onCamera: (String) -> Unit = { label ->
         cameraOptions.firstOrNull { it.label == label }?.let {
             savedCameraId = it.id
@@ -792,7 +769,6 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
             EncoderSupport.autoBitrate(it, previewConfig.width, previewConfig.height, previewConfig.fps)
         }
     }
-    val mainHandler = remember { Handler(Looper.getMainLooper()) }
     var constantBitrate by rememberSaveable { mutableStateOf(true) }
     val manualSettings = remember(manualBitrate, manualMin, manualMax) {
         EncoderSupport.manualSettings(manualBitrate, manualMin, manualMax)
@@ -815,41 +791,33 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
         }
         if (streaming) {
             streamError = null
-            server.stop()
+            viewModel.stopServer()
         } else if (problem != null) {
             streamError = problem
             if (!hasPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
         } else {
             streamError = null
             cameraError = null
-            server.start()
+            viewModel.startServer()
         }
     }
     val rotation = remember(backend, activeCamera?.id) {
         if (backend == null) 0 else CameraBackends.sensorOrientation(context, activeCamera?.id)
     }
-    DisposableEffect(streaming, backend, codec, settings, constantBitrate, previewConfig, rotation) {
-        val canStream = streaming && codec != null && settings != null && backend?.api == "Camera2"
-        if (canStream) {
-            encoderSurface = try {
-                streamer.start(
-                    codec,
-                    previewConfig.width,
-                    previewConfig.height,
-                    previewConfig.fps,
-                    rotation,
-                    settings,
-                    constantBitrate
-                ) { message -> mainHandler.post { failStream(message) } }
-            } catch (e: Exception) {
-                failStream(e.message ?: "Encoder start failed")
-                null
-            }
-        } else {
-            encoderSurface = null
-        }
-        onDispose { streamer.stop() }
+    val encoderSpec = if (streaming && codec != null && settings != null && backend?.api == "Camera2") {
+        EncoderSpec(
+            codec,
+            previewConfig.width,
+            previewConfig.height,
+            previewConfig.fps,
+            rotation,
+            settings,
+            constantBitrate
+        )
+    } else {
+        null
     }
+    LaunchedEffect(encoderSpec) { viewModel.syncEncoder(encoderSpec) }
     val cameraConfig = previewConfig.copy(encoderSurface = encoderSurface)
     val modeLabel = if (constantBitrate) "CBR" else "VBR"
     val advancedSummary = (codec?.label ?: "No encoder") + ", " + modeLabel + ", " +
@@ -992,11 +960,11 @@ fun CameraServerLandscape(modifier: Modifier = Modifier) {
 @Preview(widthDp = 891, heightDp = 411, showBackground = true)
 @Composable
 private fun CameraServerLandscapePreview() {
-    CameraServerLandscape()
+    CameraServerLandscape(remember { ServerViewModel() })
 }
 
 @Preview(widthDp = 411, heightDp = 891, showBackground = true)
 @Composable
 private fun CameraServerPortraitPreview() {
-    CameraServerLandscape()
+    CameraServerLandscape(remember { ServerViewModel() })
 }
