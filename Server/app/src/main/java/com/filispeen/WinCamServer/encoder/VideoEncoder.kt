@@ -4,6 +4,7 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.os.Bundle
+import android.util.Log
 import android.view.Surface
 
 class VideoEncoder(
@@ -23,27 +24,80 @@ class VideoEncoder(
     private var inputSurface: Surface? = null
     private var thread: Thread? = null
 
+    private companion object {
+        const val TAG = "WinCamEncoder"
+    }
+
     fun start(): Surface {
-        val encoder = MediaCodec.createEncoderByType(codec.mime)
-        try {
-            val format = MediaFormat.createVideoFormat(codec.mime, width, height)
-            format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-            format.setInteger(MediaFormat.KEY_BIT_RATE, bitrate.bitrate)
-            format.setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-            format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-            format.setInteger(MediaFormat.KEY_PRIORITY, 0)
-            format.setInteger(MediaFormat.KEY_BITRATE_MODE, bitrateMode(encoder))
-            encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            val surface = encoder.createInputSurface()
-            encoder.start()
-            mediaCodec = encoder
-            inputSurface = surface
-            running = true
-            thread = Thread({ drain(encoder) }, "wincam-encoder").also { it.start() }
-            return surface
+        var lastError: Exception? = null
+        for (extras in listOf(true, false)) {
+            var encoder: MediaCodec? = null
+            try {
+                val created = MediaCodec.createEncoderByType(codec.mime)
+                encoder = created
+                checkSupport(created)
+                val format = MediaFormat.createVideoFormat(codec.mime, width, height)
+                format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+                format.setInteger(MediaFormat.KEY_BIT_RATE, bitrate.bitrate)
+                format.setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+                format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+                if (extras) {
+                    format.setInteger(MediaFormat.KEY_PRIORITY, 0)
+                    format.setInteger(MediaFormat.KEY_BITRATE_MODE, bitrateMode(created))
+                }
+                created.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                val surface = created.createInputSurface()
+                created.start()
+                mediaCodec = created
+                inputSurface = surface
+                running = true
+                thread = Thread({ drain(created) }, "wincam-encoder").also { it.start() }
+                return surface
+            } catch (e: Exception) {
+                Log.e(TAG, "Encoder attempt failed (extras=$extras, ${codec.mime} ${width}x$height@$fps, ${bitrate.bitrate} bps)", e)
+                runCatching { encoder?.release() }
+                lastError = e
+                if (e is UnsupportedConfigException) break
+            }
+        }
+        throw IllegalStateException("Encoder start failed: ${describe(lastError)}", lastError)
+    }
+
+    private class UnsupportedConfigException(message: String) : IllegalStateException(message)
+
+    private fun checkSupport(encoder: MediaCodec) {
+        val caps = try {
+            encoder.codecInfo.getCapabilitiesForType(codec.mime).videoCapabilities
         } catch (e: Exception) {
-            runCatching { encoder.release() }
-            throw IllegalStateException("Encoder start failed: ${e.message}", e)
+            null
+        } ?: return
+        val name = encoder.name
+        if (!caps.isSizeSupported(width, height)) {
+            throw UnsupportedConfigException(
+                "$name does not support ${width}x$height (width ${caps.supportedWidths}, height ${caps.supportedHeights}, alignment ${caps.widthAlignment}x${caps.heightAlignment})"
+            )
+        }
+        if (!caps.areSizeAndRateSupported(width, height, fps.toDouble())) {
+            val rates = try {
+                caps.getSupportedFrameRatesFor(width, height).toString()
+            } catch (e: Exception) {
+                "unknown"
+            }
+            throw UnsupportedConfigException("$name does not support $fps fps at ${width}x$height (supported $rates)")
+        }
+        if (!caps.bitrateRange.contains(bitrate.bitrate)) {
+            throw UnsupportedConfigException("$name bitrate ${bitrate.bitrate} is outside ${caps.bitrateRange}")
+        }
+    }
+
+    private fun describe(error: Throwable?): String {
+        if (error == null) return "unknown error"
+        val detail = error.message ?: error.cause?.message
+        val extra = if (error is MediaCodec.CodecException) " code=${error.errorCode} diag=${error.diagnosticInfo}" else ""
+        return buildString {
+            append(error.javaClass.simpleName)
+            if (detail != null) append(": ").append(detail)
+            append(extra)
         }
     }
 
@@ -86,7 +140,8 @@ class VideoEncoder(
                 if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
             }
         } catch (e: Exception) {
-            if (running) onError("Encoder failed: ${e.message}")
+            Log.e(TAG, "Encoder drain failed", e)
+            if (running) onError("Encoder failed: ${describe(e)}")
         }
     }
 
