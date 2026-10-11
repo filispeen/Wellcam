@@ -72,18 +72,13 @@ class VideoEncoder(
             null
         } ?: return
         val name = encoder.name
-        if (!caps.isSizeSupported(width, height)) {
+        if (!caps.supportedWidths.contains(width) || !caps.supportedHeights.contains(height)) {
             throw UnsupportedConfigException(
-                "$name does not support ${width}x$height (width ${caps.supportedWidths}, height ${caps.supportedHeights}, alignment ${caps.widthAlignment}x${caps.heightAlignment})"
+                "$name does not support ${width}x$height (width ${caps.supportedWidths}, height ${caps.supportedHeights})"
             )
         }
-        if (!caps.areSizeAndRateSupported(width, height, fps.toDouble())) {
-            val rates = try {
-                caps.getSupportedFrameRatesFor(width, height).toString()
-            } catch (e: Exception) {
-                "unknown"
-            }
-            throw UnsupportedConfigException("$name does not support $fps fps at ${width}x$height (supported $rates)")
+        if (!caps.supportedFrameRates.contains(fps)) {
+            throw UnsupportedConfigException("$name does not support $fps fps (supported ${caps.supportedFrameRates})")
         }
         if (!caps.bitrateRange.contains(bitrate.bitrate)) {
             throw UnsupportedConfigException("$name bitrate ${bitrate.bitrate} is outside ${caps.bitrateRange}")

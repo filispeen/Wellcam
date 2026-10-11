@@ -38,6 +38,16 @@ object EncoderSupport {
         return Range(ranges.minOf { it.lower }, ranges.maxOf { it.upper })
     }
 
+    fun supportsSize(codec: VideoCodec, width: Int, height: Int): Boolean {
+        val info = encoders(codec).firstOrNull() ?: return true
+        val caps = try {
+            info.getCapabilitiesForType(codec.mime).videoCapabilities
+        } catch (e: Exception) {
+            null
+        } ?: return true
+        return caps.supportedWidths.contains(width) && caps.supportedHeights.contains(height)
+    }
+
     fun autoBitrate(codec: VideoCodec, width: Int, height: Int, fps: Int): BitrateSettings {
         val range = bitrateRange(codec)
         val low = range?.lower?.toLong() ?: 0L

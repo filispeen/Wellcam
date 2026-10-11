@@ -739,8 +739,14 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
         }
     }
     val cameraLabel = activeCamera?.label ?: "No camera"
-    val allSizes = remember(backend, activeCamera?.id) {
-        backend?.sizes(activeCamera?.id).orEmpty().ifEmpty { FallbackSizes }
+    val codecs = remember { EncoderSupport.supportedCodecs() }
+    var savedCodec by rememberSaveable { mutableStateOf<String?>(null) }
+    val codec = codecs.firstOrNull { it.label == savedCodec } ?: codecs.firstOrNull()
+    val allSizes = remember(backend, activeCamera?.id, codec) {
+        val all = backend?.sizes(activeCamera?.id).orEmpty().ifEmpty { FallbackSizes }
+        codec
+            ?.let { c -> all.filter { EncoderSupport.supportsSize(c, it.width, it.height) }.ifEmpty { all } }
+            ?: all
     }
     val resolutionGroups = remember(allSizes) {
         groupByAspect(allSizes).map { group ->
@@ -764,9 +770,6 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
         activeCamera?.id,
         fps.removeSuffix(" FPS").toIntOrNull() ?: 30
     )
-    val codecs = remember { EncoderSupport.supportedCodecs() }
-    var savedCodec by rememberSaveable { mutableStateOf<String?>(null) }
-    val codec = codecs.firstOrNull { it.label == savedCodec } ?: codecs.firstOrNull()
     var autoBitrate by rememberSaveable { mutableStateOf(true) }
     var manualBitrate by rememberSaveable { mutableStateOf("") }
     var manualMax by rememberSaveable { mutableStateOf("") }
