@@ -6,6 +6,7 @@
 #include <sddl.h>
 #pragma comment(lib, "advapi32.lib")
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 
@@ -30,8 +31,41 @@ namespace FrameBridge
     constexpr uint32_t Magic = 0x324D4356;
     constexpr size_t MappingBytes = sizeof(Header) + MaxFrameBytes;
     constexpr wchar_t MappingName[] = L"Global\\CppVirtualCamera.Frame";
-    constexpr wchar_t MutexName[] = L"Global\\CppVirtualCamera.FrameMutex";
     constexpr wchar_t Sddl[] = L"D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;LS)(A;;GA;;;AU)";
+    constexpr wchar_t TracePath[] = L"C:\\ProgramData\\WinCamBridge.log";
+
+    inline bool& TraceEnabled()
+    {
+        static bool enabled = false;
+        return enabled;
+    }
+
+    inline void Trace(const char* text, DWORD code = 0)
+    {
+        if (!TraceEnabled()) return;
+        HANDLE file = CreateFileW(TracePath, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                  nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file == INVALID_HANDLE_VALUE) return;
+        SYSTEMTIME time;
+        GetLocalTime(&time);
+        char line[512];
+        const int length = std::snprintf(line, sizeof(line), "%02u:%02u:%02u.%03u pid=%lu %s code=%lu\r\n",
+                                         time.wHour, time.wMinute, time.wSecond, time.wMilliseconds,
+                                         GetCurrentProcessId(), text, code);
+        if (length > 0)
+        {
+            DWORD written = 0;
+            WriteFile(file, line, static_cast<DWORD>(length), &written, nullptr);
+        }
+        CloseHandle(file);
+    }
+
+    inline uint64_t LoadSequence(const Header* header)
+    {
+        const uint64_t value = *reinterpret_cast<const volatile uint64_t*>(&header->sequence);
+        MemoryBarrier();
+        return value;
+    }
 
     class Writer
     {
@@ -59,15 +93,15 @@ namespace FrameBridge
                 INVALID_HANDLE_VALUE, &attributes, PAGE_READWRITE,
                 static_cast<DWORD>(static_cast<uint64_t>(MappingBytes) >> 32),
                 static_cast<DWORD>(MappingBytes & 0xFFFFFFFFu), MappingName);
-            if (mapping_)
-                mutex_ = CreateMutexW(&attributes, FALSE, MutexName);
             LocalFree(descriptor);
-
-            if (!mapping_ || !mutex_) { Release(); return false; }
+            if (!mapping_) return false;
 
             view_ = static_cast<uint8_t*>(MapViewOfFile(
                 mapping_, FILE_MAP_ALL_ACCESS, 0, 0, MappingBytes));
             if (!view_) { Release(); return false; }
+
+            auto* header = reinterpret_cast<Header*>(view_);
+            if (LoadSequence(header) & 1) InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&header->sequence));
             return true;
         }
 
@@ -77,29 +111,25 @@ namespace FrameBridge
             if (width == 0 || height == 0 || width > MaxWidth || height > MaxHeight) return false;
 
             const uint32_t bytes = width * height * BytesPerPixel;
-            const DWORD wait = WaitForSingleObject(mutex_, 100);
-            if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED) return false;
-
             auto* header = reinterpret_cast<Header*>(view_);
+
+            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&header->sequence));
             std::memcpy(view_ + sizeof(Header), pixels, bytes);
             header->magic = Magic;
             header->width = width;
             header->height = height;
             header->bytes = bytes;
-            ++header->sequence;
-            ReleaseMutex(mutex_);
+            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&header->sequence));
             return true;
         }
 
         void Clear()
         {
-            if (!view_ || !mutex_) return;
-            const DWORD wait = WaitForSingleObject(mutex_, 100);
-            if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED) return;
+            if (!view_) return;
             auto* header = reinterpret_cast<Header*>(view_);
+            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&header->sequence));
             header->bytes = 0;
-            ++header->sequence;
-            ReleaseMutex(mutex_);
+            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&header->sequence));
         }
 
         void Close()
@@ -114,12 +144,10 @@ namespace FrameBridge
         void Release()
         {
             if (view_) { UnmapViewOfFile(view_); view_ = nullptr; }
-            if (mutex_) { CloseHandle(mutex_); mutex_ = nullptr; }
             if (mapping_) { CloseHandle(mapping_); mapping_ = nullptr; }
         }
 
         HANDLE mapping_ = nullptr;
-        HANDLE mutex_ = nullptr;
         uint8_t* view_ = nullptr;
     };
 
@@ -134,66 +162,94 @@ namespace FrameBridge
         bool PeekSize(uint32_t& width, uint32_t& height)
         {
             if (!Ensure()) return false;
-            const DWORD wait = WaitForSingleObject(mutex_, 5);
-            if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED) return false;
-
             const auto* header = reinterpret_cast<const Header*>(view_);
-            const bool ok = header->magic == Magic && header->width != 0 && header->height != 0 &&
-                            header->width <= MaxWidth && header->height <= MaxHeight;
-            if (ok) { width = header->width; height = header->height; }
-            ReleaseMutex(mutex_);
-            return ok;
+
+            for (int attempt = 0; attempt < 8; ++attempt)
+            {
+                const uint64_t before = LoadSequence(header);
+                if (before & 1) { Sleep(1); continue; }
+                const uint32_t magic = header->magic;
+                const uint32_t w = header->width;
+                const uint32_t h = header->height;
+                MemoryBarrier();
+                if (LoadSequence(header) != before) continue;
+
+                const bool ok = magic == Magic && w != 0 && h != 0 && w <= MaxWidth && h <= MaxHeight;
+                if (ok) { width = w; height = h; }
+                return ok;
+            }
+            return false;
         }
 
         bool Read(uint8_t* destination, uint32_t capacity, uint32_t& width, uint32_t& height)
         {
             if (!destination || !Ensure()) return false;
-            const DWORD wait = WaitForSingleObject(mutex_, 5);
-            if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED) return false;
-
             const auto* header = reinterpret_cast<const Header*>(view_);
-            bool ok = Valid(*header) && header->bytes <= capacity;
-            if (ok)
+
+            for (int attempt = 0; attempt < 6; ++attempt)
             {
-                std::memcpy(destination, view_ + sizeof(Header), header->bytes);
-                width = header->width;
-                height = header->height;
+                const uint64_t before = LoadSequence(header);
+                if (before & 1) { Sleep(1); continue; }
+
+                const uint32_t magic = header->magic;
+                const uint32_t w = header->width;
+                const uint32_t h = header->height;
+                const uint32_t bytes = header->bytes;
+                const bool valid = magic == Magic && w != 0 && h != 0 && w <= MaxWidth && h <= MaxHeight &&
+                                   bytes == w * h * BytesPerPixel && bytes <= capacity;
+                if (valid) std::memcpy(destination, view_ + sizeof(Header), bytes);
+                MemoryBarrier();
+                if (LoadSequence(header) != before) { Sleep(1); continue; }
+
+                if (!valid) { Note(3, "bridge has no frame", bytes); return false; }
+                width = w;
+                height = h;
+                Note(4, "bridge frames flowing", w);
+                return true;
             }
-            ReleaseMutex(mutex_);
-            return ok;
+
+            Note(5, "bridge read kept tearing", 0);
+            return false;
         }
 
     private:
-        static bool Valid(const Header& header)
+        void Note(int state, const char* text, DWORD code)
         {
-            return header.magic == Magic && header.width != 0 && header.height != 0 &&
-                   header.width <= MaxWidth && header.height <= MaxHeight &&
-                   header.bytes == header.width * header.height * BytesPerPixel;
+            if (state == state_) return;
+            state_ = state;
+            Trace(text, code);
         }
 
         bool Ensure()
         {
             if (view_) return true;
             mapping_ = OpenFileMappingW(FILE_MAP_READ, FALSE, MappingName);
-            if (!mapping_) return false;
-            mutex_ = OpenMutexW(SYNCHRONIZE | MUTEX_MODIFY_STATE, FALSE, MutexName);
-            if (!mutex_) { Release(); return false; }
+            if (!mapping_)
+            {
+                Note(1, "OpenFileMapping failed", GetLastError());
+                return false;
+            }
             view_ = static_cast<const uint8_t*>(MapViewOfFile(
                 mapping_, FILE_MAP_READ, 0, 0, MappingBytes));
-            if (!view_) { Release(); return false; }
+            if (!view_)
+            {
+                Note(2, "MapViewOfFile failed", GetLastError());
+                Release();
+                return false;
+            }
+            Note(6, "bridge mapping opened", 0);
             return true;
         }
 
         void Release()
         {
             if (view_) { UnmapViewOfFile(view_); view_ = nullptr; }
-            if (mutex_) { CloseHandle(mutex_); mutex_ = nullptr; }
             if (mapping_) { CloseHandle(mapping_); mapping_ = nullptr; }
         }
 
         HANDLE mapping_ = nullptr;
-        HANDLE mutex_ = nullptr;
         const uint8_t* view_ = nullptr;
+        int state_ = 0;
     };
 
     inline bool PeekSize(uint32_t& width, uint32_t& height)

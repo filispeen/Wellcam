@@ -1,8 +1,8 @@
 diff --git a/VCamSampleSource/MediaStream.cpp b/VCamSampleSource/MediaStream.cpp
-index baf739f..2139667 100644
+index baf739f..ed8ee8d 100644
 --- a/VCamSampleSource/MediaStream.cpp
 +++ b/VCamSampleSource/MediaStream.cpp
-@@ -6,6 +6,7 @@
+@@ -6,10 +6,12 @@
  #include "FrameGenerator.h"
  #include "MediaStream.h"
  #include "MediaSource.h"
@@ -10,7 +10,12 @@ index baf739f..2139667 100644
  
  HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
  {
-@@ -20,11 +21,16 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
+ 	RETURN_HR_IF_NULL(E_POINTER, source);
++	FrameBridge::TraceEnabled() = true;
+ 	_source = source;
+ 	_index = index;
+ 
+@@ -20,11 +22,21 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
  
  	RETURN_IF_FAILED(MFCreateEventQueue(&_queue));
  
@@ -24,6 +29,11 @@ index baf739f..2139667 100644
 +	{
 +		_width = FrameBridge::DefaultWidth;
 +		_height = FrameBridge::DefaultHeight;
++		FrameBridge::Trace("camera uses default size, bridge not readable", _width);
++	}
++	else
++	{
++		FrameBridge::Trace("camera uses bridge size, width", _width);
 +	}
 +
 +	const UINT32 NUM_IMAGE_COLS = _width;
@@ -31,7 +41,7 @@ index baf739f..2139667 100644
  
  	wil::com_ptr_nothrow<IMFMediaType> rgbType;
  	RETURN_IF_FAILED(MFCreateMediaType(&rgbType));
-@@ -35,7 +41,8 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
+@@ -35,7 +47,8 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
  	rgbType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
  	rgbType->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
  	MFSetAttributeRatio(rgbType.get(), MF_MT_FRAME_RATE, 30, 1);
@@ -41,7 +51,7 @@ index baf739f..2139667 100644
  	rgbType->SetUINT32(MF_MT_AVG_BITRATE, bitrate);
  	MFSetAttributeRatio(rgbType.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
  	types[0] = rgbType.detach();
-@@ -80,7 +87,7 @@ HRESULT MediaStream::Start(IMFMediaType* type)
+@@ -80,7 +93,7 @@ HRESULT MediaStream::Start(IMFMediaType* type)
  
  	// at this point, set D3D manager may have not been called
  	// so we want to create a D2D1 renter target anyway
@@ -50,7 +60,7 @@ index baf739f..2139667 100644
  
  	RETURN_IF_FAILED(_allocator->InitializeSampleAllocator(10, type));
  	RETURN_IF_FAILED(_queue->QueueEventParamVar(MEStreamStarted, GUID_NULL, S_OK, nullptr));
-@@ -112,11 +119,7 @@ HRESULT MediaStream::SetAllocator(IUnknown* allocator)
+@@ -112,11 +125,7 @@ HRESULT MediaStream::SetAllocator(IUnknown* allocator)
  
  HRESULT MediaStream::SetD3DManager(IUnknown* manager)
  {
@@ -63,7 +73,7 @@ index baf739f..2139667 100644
  	return S_OK;
  }
  
-@@ -213,9 +216,29 @@ STDMETHODIMP MediaStream::RequestSample(IUnknown* pToken)
+@@ -213,9 +222,39 @@ STDMETHODIMP MediaStream::RequestSample(IUnknown* pToken)
  	RETURN_IF_FAILED(sample->SetSampleTime(MFGetSystemTime()));
  	RETURN_IF_FAILED(sample->SetSampleDuration(333333));
  
@@ -84,10 +94,20 @@ index baf739f..2139667 100644
 +	}
 +	uint32_t frameWidth = 0;
 +	uint32_t frameHeight = 0;
-+	if (!FrameBridge::ReadBGRA(destination, maxLength, frameWidth, frameHeight) ||
-+		frameWidth != _width || frameHeight != _height)
++	const bool gotFrame = FrameBridge::ReadBGRA(destination, maxLength, frameWidth, frameHeight);
++	if (!gotFrame || frameWidth != _width || frameHeight != _height)
 +	{
++		if (gotFrame && _lastFrameState != 2)
++		{
++			_lastFrameState = 2;
++			FrameBridge::Trace("frame size differs from camera size, frame width", frameWidth);
++		}
 +		ZeroMemory(destination, frameBytes);
++	}
++	else if (_lastFrameState != 1)
++	{
++		_lastFrameState = 1;
++		FrameBridge::Trace("camera delivering bridge frames, width", frameWidth);
 +	}
 +	RETURN_IF_FAILED(frameBuffer->SetCurrentLength(frameBytes));
 +	RETURN_IF_FAILED(frameBuffer->Unlock());
@@ -97,14 +117,15 @@ index baf739f..2139667 100644
  	if (pToken)
  	{
 diff --git a/VCamSampleSource/MediaStream.h b/VCamSampleSource/MediaStream.h
-index 7c2c640..7553265 100644
+index 7c2c640..3906f26 100644
 --- a/VCamSampleSource/MediaStream.h
 +++ b/VCamSampleSource/MediaStream.h
-@@ -57,4 +57,6 @@ private:
+@@ -57,4 +57,7 @@ private:
  	wil::com_ptr_nothrow<IMFMediaSource> _source;
  	wil::com_ptr_nothrow<IMFVideoSampleAllocatorEx> _allocator;
  	int _index;
 +	UINT32 _width = 1280;
 +	UINT32 _height = 720;
++	int _lastFrameState = 0;
  };
 \ No newline at end of file
