@@ -91,21 +91,20 @@ namespace FrameBridge
             return true;
         }
 
+        void Clear()
+        {
+            if (!view_ || !mutex_) return;
+            const DWORD wait = WaitForSingleObject(mutex_, 100);
+            if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED) return;
+            auto* header = reinterpret_cast<Header*>(view_);
+            header->bytes = 0;
+            ++header->sequence;
+            ReleaseMutex(mutex_);
+        }
+
         void Close()
         {
-            if (view_ && mutex_)
-            {
-                const DWORD wait = WaitForSingleObject(mutex_, 100);
-                if (wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED)
-                {
-                    auto* header = reinterpret_cast<Header*>(view_);
-                    header->width = 0;
-                    header->height = 0;
-                    header->bytes = 0;
-                    ++header->sequence;
-                    ReleaseMutex(mutex_);
-                }
-            }
+            Clear();
             Release();
         }
 
@@ -139,7 +138,8 @@ namespace FrameBridge
             if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED) return false;
 
             const auto* header = reinterpret_cast<const Header*>(view_);
-            const bool ok = Valid(*header);
+            const bool ok = header->magic == Magic && header->width != 0 && header->height != 0 &&
+                            header->width <= MaxWidth && header->height <= MaxHeight;
             if (ok) { width = header->width; height = header->height; }
             ReleaseMutex(mutex_);
             return ok;

@@ -5,9 +5,9 @@ This kit is an integration layer for the public `smourier/VCamSample` Media Foun
 ## Architecture
 
 - Your C++ application decodes H.264 or MJPEG to uncompressed BGRA (or uses an existing decoded frame).
-- Call `FrameBridge::WriteBGRA(...)` from that same process.
+- Create a `FrameBridge::Writer`, call `Open()` once, then `Write(bgra, width, height)` for each frame from that same process.
 - The Media Foundation source DLL is loaded by Windows camera infrastructure in other processes, so the camera source cannot safely consume ordinary in-process pointers. It reads the latest frame through a named shared-memory mapping.
-- The camera advertises RGB32 at 1280x960 / 30 fps in this starter integration. The Windows capture stack or client may convert it if needed.
+- The camera advertises RGB32 at 30 fps. Its size is read from the bridge when `VCamSample.exe` starts, or 1280x720 if no frame was published yet.
 
 **Important:** H.264/MJPEG are encoded formats. A virtual camera generally publishes decoded video frames, not the incoming compressed bitstream directly. This kit's demo sender uses Media Foundation Source Reader to decode a video file or URL to BGRA. For a live H.264/MJPEG stream already handled by your app, integrate the `WriteBGRA` call after your existing decoder.
 
@@ -28,7 +28,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\install.ps1
 ```
 
-The script clones `https://github.com/smourier/VCamSample` into `upstream`, copies the bridge header, and patches `MediaStream.cpp` to copy frames from shared memory. It stops if the expected source lines have changed.
+The script clones `https://github.com/smourier/VCamSample` into `upstream`, copies the bridge header, and applies `patches\vcam-bridge.patch`. It stops if the patch no longer applies to the upstream version.
 
 Then open `upstream\VCamSample.sln` in Visual Studio, select **x64** and **Release**, and build the solution.
 
@@ -63,20 +63,14 @@ Add `bridge\FrameBridge.h` to your C++ project and call:
 ```cpp
 #include "FrameBridge.h"
 
-// `bgra` points to width*height*4 bytes in BGRA channel order.
-FrameBridge::WriteBGRA(bgra, width, height);
+FrameBridge::Writer writer;
+writer.Open();
+writer.Write(bgra, width, height);
 ```
 
-The current bridge expects **1280x960 BGRA32**. Resize/convert before calling it. `WriteBGRA` copies the frame into the shared mapping. The camera source reads the latest frame whenever Windows requests a sample.
+`bgra` points to width*height*4 bytes in BGRA channel order, up to 3840x2160. The writer keeps the mapping open, so `Open()` is called once. `Open()` needs an elevated process because the mapping lives in the `Global\` namespace. The camera source reads the latest frame whenever Windows requests a sample.
 
-Example:
-```cpp
-// after decoding a H.264/MJPEG frame to BGRA:
-if (width == 1280 && height == 960) {
-    FrameBridge::WriteBGRA(decodedBgra.data(), width, height);
-}
-```
-
+The camera size is fixed when `VCamSample.exe` starts: it uses the size of the last frame published to the bridge, or 1280x720 if there is none. If the published size differs from the camera size, the camera shows black. Start the sender and publish a frame before starting `VCamSample.exe`.
 The mapping uses a global named object and an ACL that allows LocalSystem, Administrators, and authenticated users. This is intended for a local development machine; do not use it as-is in a multi-user/security-sensitive deployment. Change the names and security descriptor for your environment.
 
 ## 5. Demo sender (optional)
@@ -92,7 +86,40 @@ Run:
 FrameSender.exe "C:\path\to\video.mp4"
 ```
 
-This is a test sender. For a live compressed stream, use the decoder already present in your application and call `WriteBGRA` with its decoded frames.
+This is a test sender. Run it from an elevated terminal. The source must be at most 3840x2160. For a live phone stream use `wincam_client` below.
+
+## 5a. WinCam PC client
+
+`wincam_client.exe` receives the phone stream (Protocol v2) over TCP or USB (AOA), decodes H.264/H.265 with FFmpeg, applies rotation, and publishes BGRA frames to the bridge.
+
+Build (once, FFmpeg through vcpkg takes 15 to 30 minutes the first time):
+
+```bat
+git clone https://github.com/microsoft/vcpkg C:\vcpkg
+C:\vcpkg\bootstrap-vcpkg.bat
+setx VCPKG_ROOT C:\vcpkg
+```
+
+Open a new terminal in this directory:
+
+```bat
+cmake --preset default
+cmake --build --preset release
+```
+
+Run from an elevated terminal:
+
+```bat
+build\Release\wincam_client.exe --tcp 127.0.0.1:11203
+build\Release\wincam_client.exe --tcp 192.168.1.50:11203
+build\Release\wincam_client.exe --aoa
+```
+
+- ADB mode: run `adb forward tcp:11203 tcp:11203` first.
+- AOA mode: needs WinUSB (Zadig) as described in `Server\docs\AOA_PROTOCOL.md`. `--vid` and `--pid` (hex) limit which device is probed.
+- `--size WxH` forces the camera output size. Without it the size is taken from the bridge or from the first stream.
+- `--offset DEGREES` is added to the rotation from the stream header (default 270). Key `r` adds another 90 at runtime.
+- The client reconnects automatically when the stream or cable drops.
 
 ## 6. Unregister / remove the virtual camera
 
@@ -110,6 +137,6 @@ If the camera remains listed, reboot or restart the Windows camera/frame-server 
 
 - Windows 10 does not expose the same `MFCreateVirtualCamera` API; this kit targets Windows 11.
 - The shared-memory transport carries decoded BGRA frames, not H.264/MJPEG packets.
-- Resolution and frame rate are fixed in this patch (1280x960, 30 fps).
+- Camera resolution is fixed when `VCamSample.exe` starts (see section 4); 30 fps is fixed.
 - The patch modifies an upstream sample. Review its license and source before redistribution.
 - This integration has not been compiled or run in this environment. Verify it on your target Windows/SDK version; it is provided as source and integration instructions, not as a prebuilt guaranteed-working driver.

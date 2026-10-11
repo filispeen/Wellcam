@@ -1,0 +1,12 @@
+{
+  "name": "wincam-client",
+  "version": "0.0.2",
+  "dependencies": [
+    {
+      "name": "ffmpeg",
+      "default-features": false,
+      "features": ["avcodec", "swscale"]
+    },
+    "libusb"
+  ]
+}
