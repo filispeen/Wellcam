@@ -1,0 +1,110 @@
+diff --git a/VCamSampleSource/MediaStream.cpp b/VCamSampleSource/MediaStream.cpp
+index baf739f..2139667 100644
+--- a/VCamSampleSource/MediaStream.cpp
++++ b/VCamSampleSource/MediaStream.cpp
+@@ -6,6 +6,7 @@
+ #include "FrameGenerator.h"
+ #include "MediaStream.h"
+ #include "MediaSource.h"
++#include "FrameBridge.h"
+ 
+ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
+ {
+@@ -20,11 +21,16 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
+ 
+ 	RETURN_IF_FAILED(MFCreateEventQueue(&_queue));
+ 
+-	// set 1 here to force RGB32 only
+-	auto types = wil::make_unique_cotaskmem_array<wil::com_ptr_nothrow<IMFMediaType>>(2);
++	auto types = wil::make_unique_cotaskmem_array<wil::com_ptr_nothrow<IMFMediaType>>(1);
+ 
+-#define NUM_IMAGE_COLS 1280 // 640
+-#define NUM_IMAGE_ROWS 960 //480
++	if (!FrameBridge::PeekSize(_width, _height))
++	{
++		_width = FrameBridge::DefaultWidth;
++		_height = FrameBridge::DefaultHeight;
++	}
++
++	const UINT32 NUM_IMAGE_COLS = _width;
++	const UINT32 NUM_IMAGE_ROWS = _height;
+ 
+ 	wil::com_ptr_nothrow<IMFMediaType> rgbType;
+ 	RETURN_IF_FAILED(MFCreateMediaType(&rgbType));
+@@ -35,7 +41,8 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
+ 	rgbType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+ 	rgbType->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
+ 	MFSetAttributeRatio(rgbType.get(), MF_MT_FRAME_RATE, 30, 1);
+-	auto bitrate = (uint32_t)(NUM_IMAGE_COLS * NUM_IMAGE_ROWS * 4 * 8 * 30);
++	const uint64_t wideBitrate = (uint64_t)NUM_IMAGE_COLS * NUM_IMAGE_ROWS * 4 * 8 * 30;
++	auto bitrate = (uint32_t)(wideBitrate > UINT32_MAX ? UINT32_MAX : wideBitrate);
+ 	rgbType->SetUINT32(MF_MT_AVG_BITRATE, bitrate);
+ 	MFSetAttributeRatio(rgbType.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
+ 	types[0] = rgbType.detach();
+@@ -80,7 +87,7 @@ HRESULT MediaStream::Start(IMFMediaType* type)
+ 
+ 	// at this point, set D3D manager may have not been called
+ 	// so we want to create a D2D1 renter target anyway
+-	RETURN_IF_FAILED(_generator.EnsureRenderTarget(NUM_IMAGE_COLS, NUM_IMAGE_ROWS));
++	RETURN_IF_FAILED(_generator.EnsureRenderTarget(_width, _height));
+ 
+ 	RETURN_IF_FAILED(_allocator->InitializeSampleAllocator(10, type));
+ 	RETURN_IF_FAILED(_queue->QueueEventParamVar(MEStreamStarted, GUID_NULL, S_OK, nullptr));
+@@ -112,11 +119,7 @@ HRESULT MediaStream::SetAllocator(IUnknown* allocator)
+ 
+ HRESULT MediaStream::SetD3DManager(IUnknown* manager)
+ {
+-	RETURN_HR_IF_NULL(E_POINTER, manager);
+-
+-	// comment these 2 lines to force CPU usage
+-	RETURN_IF_FAILED(_allocator->SetDirectXManager(manager));
+-	RETURN_IF_FAILED(_generator.SetD3DManager(manager, NUM_IMAGE_COLS, NUM_IMAGE_ROWS));
++	UNREFERENCED_PARAMETER(manager);
+ 	return S_OK;
+ }
+ 
+@@ -213,9 +216,29 @@ STDMETHODIMP MediaStream::RequestSample(IUnknown* pToken)
+ 	RETURN_IF_FAILED(sample->SetSampleTime(MFGetSystemTime()));
+ 	RETURN_IF_FAILED(sample->SetSampleDuration(333333));
+ 
+-	// generate frame
+-	wil::com_ptr_nothrow<IMFSample> outSample;
+-	RETURN_IF_FAILED(_generator.Generate(sample.get(), _format, &outSample));
++	wil::com_ptr_nothrow<IMFMediaBuffer> frameBuffer;
++	RETURN_IF_FAILED(sample->ConvertToContiguousBuffer(&frameBuffer));
++	BYTE* destination = nullptr;
++	DWORD maxLength = 0;
++	DWORD currentLength = 0;
++	RETURN_IF_FAILED(frameBuffer->Lock(&destination, &maxLength, &currentLength));
++	const DWORD frameBytes = _width * _height * 4;
++	if (maxLength < frameBytes)
++	{
++		frameBuffer->Unlock();
++		RETURN_HR(MF_E_BUFFERTOOSMALL);
++	}
++	uint32_t frameWidth = 0;
++	uint32_t frameHeight = 0;
++	if (!FrameBridge::ReadBGRA(destination, maxLength, frameWidth, frameHeight) ||
++		frameWidth != _width || frameHeight != _height)
++	{
++		ZeroMemory(destination, frameBytes);
++	}
++	RETURN_IF_FAILED(frameBuffer->SetCurrentLength(frameBytes));
++	RETURN_IF_FAILED(frameBuffer->Unlock());
++
++	wil::com_ptr_nothrow<IMFSample> outSample = sample;
+ 
+ 	if (pToken)
+ 	{
+diff --git a/VCamSampleSource/MediaStream.h b/VCamSampleSource/MediaStream.h
+index 7c2c640..7553265 100644
+--- a/VCamSampleSource/MediaStream.h
++++ b/VCamSampleSource/MediaStream.h
+@@ -57,4 +57,6 @@ private:
+ 	wil::com_ptr_nothrow<IMFMediaSource> _source;
+ 	wil::com_ptr_nothrow<IMFVideoSampleAllocatorEx> _allocator;
+ 	int _index;
++	UINT32 _width = 1280;
++	UINT32 _height = 720;
+ };
+\ No newline at end of file
