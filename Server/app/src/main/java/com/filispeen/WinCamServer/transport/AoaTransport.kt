@@ -278,7 +278,11 @@ class AoaTransport(
             if (writeStartedAt != 0L) writeStartedAt = SystemClock.elapsedRealtime()
         }
 
-        fun pending(): Int = pendingCount.get()
+        fun pending(): Int {
+            val started = writeStartedAt
+            if (hosted && started != 0L && SystemClock.elapsedRealtime() - started > AoaWriteTimeoutMs) abort()
+            return pendingCount.get()
+        }
 
         fun enqueue(data: ByteArray, offset: Int, length: Int): Boolean {
             if (closed) return false
