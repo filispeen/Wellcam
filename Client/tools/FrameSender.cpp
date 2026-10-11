@@ -58,10 +58,16 @@ int wmain(int argc, wchar_t** argv)
     if (currentType) currentType->Release();
 
     if (SUCCEEDED(hr) &&
-        (sourceWidth != FrameBridge::Width || sourceHeight != FrameBridge::Height)) {
-        std::wcerr << L"Demo sender requires 1280x960 input after RGB32 conversion; "
-                      L"resize your source in your app before publishing.\n";
+        (sourceWidth == 0 || sourceHeight == 0 ||
+         sourceWidth > FrameBridge::MaxWidth || sourceHeight > FrameBridge::MaxHeight)) {
+        std::wcerr << L"Unsupported source size.\n";
         hr = MF_E_INVALIDMEDIATYPE;
+    }
+
+    FrameBridge::Writer writer;
+    if (SUCCEEDED(hr) && !writer.Open()) {
+        std::wcerr << L"Could not open the shared frame bridge. Run from an elevated terminal.\n";
+        hr = E_ACCESSDENIED;
     }
 
     if (FAILED(hr)) {
@@ -71,7 +77,6 @@ int wmain(int argc, wchar_t** argv)
         MFShutdown(); CoUninitialize(); return 1;
     }
 
-    std::vector<uint8_t> scaled(FrameBridge::FrameBytes);
     std::wcout << L"Publishing decoded frames. Ctrl+C to stop.\n";
     for (;;) {
         DWORD streamIndex = 0, flags = 0;
@@ -85,7 +90,6 @@ int wmain(int argc, wchar_t** argv)
         }
         if (flags & MF_SOURCE_READERF_ENDOFSTREAM) {
             if (sample) sample->Release();
-            // Stop at end-of-stream; restart the source explicitly if looping is needed.
             break;
         }
 
@@ -97,10 +101,8 @@ int wmain(int argc, wchar_t** argv)
                 DWORD maxLen = 0, curLen = 0;
                 hr = buffer->Lock(&src, &maxLen, &curLen);
                 if (SUCCEEDED(hr)) {
-                    // Source Reader RGB32 output may not match the camera's fixed
-                    // dimensions. This demo only accepts exactly 1280x960.
-                    if (curLen >= FrameBridge::FrameBytes) {
-                        FrameBridge::WriteBGRA(src, FrameBridge::Width, FrameBridge::Height);
+                    if (curLen >= sourceWidth * sourceHeight * FrameBridge::BytesPerPixel) {
+                        writer.Write(src, sourceWidth, sourceHeight);
                     }
                     buffer->Unlock();
                 }
