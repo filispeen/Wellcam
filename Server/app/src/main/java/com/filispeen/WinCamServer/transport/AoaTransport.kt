@@ -189,7 +189,14 @@ class AoaTransport(
         clientListener?.onClientConnected()
     }
 
-    private fun endSession(s: Session, reopen: Boolean = false) {
+    private fun onStalled(s: Session) {
+        val t = synchronized(lock) { if (session === s) token else null } ?: return
+        if (s.hosted) return
+        clientListener?.onClientDisconnected()
+        post(t, ServerState.Listening, null)
+    }
+
+    private fun endSession(s: Session) {
         val current = synchronized(lock) {
             if (session === s) {
                 session = null
@@ -203,10 +210,7 @@ class AoaTransport(
         if (!current) return
         if (s.hosted) clientListener?.onClientDisconnected()
         val t = synchronized(lock) { token }
-        if (t != null) {
-            post(t, ServerState.Listening, null)
-            if (reopen) main.postDelayed({ if (alive(t)) tryOpen(t) }, 500L)
-        }
+        if (t != null) post(t, ServerState.Listening, null)
     }
 
     private fun fail(t: Any, message: String) {
@@ -271,6 +275,7 @@ class AoaTransport(
             epoch++
             queue.clear()
             pendingCount.set(0)
+            if (writeStartedAt != 0L) writeStartedAt = SystemClock.elapsedRealtime()
         }
 
         fun pending(): Int = pendingCount.get()
@@ -298,8 +303,9 @@ class AoaTransport(
         }
 
         private fun abort() {
-            closed = true
-            main.post { endSession(this, true) }
+            hosted = false
+            reset()
+            main.post { onStalled(this) }
         }
 
         private fun writeLoop() {
