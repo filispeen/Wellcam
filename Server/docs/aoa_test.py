@@ -53,13 +53,20 @@ def open_bulk_in(dev):
         pass
     cfg = dev.get_active_configuration()
     for intf in cfg:
+        ep_in = None
+        ep_out = None
         for ep in intf:
-            is_in = usb.util.endpoint_direction(ep.bEndpointAddress) == usb.util.ENDPOINT_IN
-            is_bulk = usb.util.endpoint_type(ep.bmAttributes) == usb.util.ENDPOINT_TYPE_BULK
-            if is_in and is_bulk:
-                usb.util.claim_interface(dev, intf.bInterfaceNumber)
-                return ep
-    raise SystemExit("bulk IN endpoint not found")
+            kind = usb.util.endpoint_type(ep.bmAttributes)
+            if kind != usb.util.ENDPOINT_TYPE_BULK:
+                continue
+            if usb.util.endpoint_direction(ep.bEndpointAddress) == usb.util.ENDPOINT_IN:
+                ep_in = ep
+            else:
+                ep_out = ep
+        if ep_in is not None and ep_out is not None:
+            usb.util.claim_interface(dev, intf.bInterfaceNumber)
+            return ep_in, ep_out
+    raise SystemExit("bulk endpoints not found")
 
 
 class StreamReader:
@@ -67,19 +74,44 @@ class StreamReader:
         self.endpoint = endpoint
         self.buffer = bytearray()
 
-    def take(self, count):
+    def fill(self, count):
         while len(self.buffer) < count:
             try:
                 chunk = self.endpoint.read(16384, timeout=1000)
             except usb.core.USBTimeoutError:
                 continue
             self.buffer += bytes(chunk)
+
+    def take(self, count):
+        self.fill(count)
         out = bytes(self.buffer[:count])
         del self.buffer[:count]
         return out
 
+    def sync(self):
+        skipped = 0
+        while True:
+            self.fill(HEADER.size)
+            index = self.buffer.find(b"WCAM\x02")
+            if index < 0:
+                drop = len(self.buffer) - 4
+                skipped += drop
+                del self.buffer[:drop]
+                self.fill(HEADER.size + 1)
+                continue
+            skipped += index
+            del self.buffer[:index]
+            self.fill(HEADER.size)
+            if self.buffer[5] in (1, 2):
+                return skipped
+            skipped += 1
+            del self.buffer[:1]
+
 
 def run(reader):
+    skipped = reader.sync()
+    if skipped:
+        print("skipped %d stale bytes" % skipped)
     magic, version, codec, width, height, fps, rotation = HEADER.unpack(reader.take(HEADER.size))
     if magic != b"WCAM":
         raise SystemExit("bad magic: %r" % magic)
@@ -119,7 +151,9 @@ def main():
         switch_to_accessory(args.vid, args.pid)
         dev = wait_accessory(10)
     print("accessory %04x:%04x" % (dev.idVendor, dev.idProduct))
-    run(StreamReader(open_bulk_in(dev)))
+    ep_in, ep_out = open_bulk_in(dev)
+    ep_out.write(b"HELO", timeout=2000)
+    run(StreamReader(ep_in))
 
 
 if __name__ == "__main__":
