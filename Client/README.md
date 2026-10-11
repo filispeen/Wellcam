@@ -30,7 +30,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 The script clones `https://github.com/smourier/VCamSample` into `upstream`, copies the bridge header, and applies `patches\vcam-bridge.patch`. It stops if the patch no longer applies to the upstream version.
 
-Then open `upstream\VCamSample.sln` in Visual Studio, select **x64** and **Release**, and build the solution.
+Then the script restores NuGet packages and builds `upstream\VCamSample.sln` as x64 Release with the `v143` toolset (Visual Studio 2022 or Build Tools). Use `.\install.ps1 -Toolset v145` for Visual Studio 2026, or `-SkipBuild` to build manually in Visual Studio.
 
 The upstream project has its own dependencies and build configuration; use its README if Visual Studio asks to restore dependencies.
 

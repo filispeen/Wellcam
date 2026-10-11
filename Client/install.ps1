@@ -1,3 +1,8 @@
+param(
+    [string]$Toolset = "v143",
+    [switch]$SkipBuild
+)
+
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -31,4 +36,28 @@ try {
     Pop-Location
 }
 
-Write-Host "Next: open upstream\VCamSample.sln, build x64 Release, then follow README.md."
+if ($SkipBuild) {
+    Write-Host "Skipped build. Open upstream\VCamSample.sln, build x64 Release, then follow README.md."
+    return
+}
+
+$tools = Join-Path $root "build\tools"
+New-Item -ItemType Directory -Force $tools | Out-Null
+$nuget = Join-Path $tools "nuget.exe"
+if (!(Test-Path $nuget)) {
+    Invoke-WebRequest "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe" -OutFile $nuget -UseBasicParsing
+}
+
+$solution = Join-Path $repo "VCamSample.sln"
+& $nuget restore $solution -Source "https://api.nuget.org/v3/index.json"
+if ($LASTEXITCODE -ne 0) { throw "nuget restore failed" }
+
+$installer = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+$vs = & $installer -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+if (!$vs) { throw "Visual Studio or Build Tools with MSBuild was not found" }
+$msbuild = Join-Path $vs "MSBuild\Current\Bin\MSBuild.exe"
+
+& $msbuild $solution /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=$Toolset /m /v:minimal
+if ($LASTEXITCODE -ne 0) { throw "MSBuild failed" }
+
+Write-Host "Built upstream\x64\Release. Next: regsvr32 VCamSampleSource.dll from an elevated terminal, then run VCamSample.exe."
