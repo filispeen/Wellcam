@@ -37,6 +37,8 @@ namespace
         int offset = 270;
         uint32_t width = 0;
         uint32_t height = 0;
+        wincam::DecoderMode decoder = wincam::DecoderMode::Auto;
+        int gpu = 0;
     };
 
     void PrintUsage()
@@ -49,6 +51,8 @@ namespace
             "  --pid HEX           phone product id filter for --aoa\n"
             "  --offset DEGREES    rotation added to the header rotation (default 270)\n"
             "  --size WxH          force camera output size\n"
+            "  --decoder MODE      auto (default), cpu or gpu (D3D11VA, any vendor)\n"
+            "  --gpu INDEX         adapter index for GPU decoding (default 0)\n"
             "Keys: r rotate output by 90 degrees, q quit\n"
             "Run from an elevated terminal.\n");
     }
@@ -90,6 +94,18 @@ namespace
             else if (arg == "--offset" && hasValue)
             {
                 options.offset = std::atoi(argv[++i]);
+            }
+            else if (arg == "--decoder" && hasValue)
+            {
+                const std::string value = argv[++i];
+                if (value == "auto") options.decoder = wincam::DecoderMode::Auto;
+                else if (value == "cpu") options.decoder = wincam::DecoderMode::Cpu;
+                else if (value == "gpu") options.decoder = wincam::DecoderMode::Gpu;
+                else return false;
+            }
+            else if (arg == "--gpu" && hasValue)
+            {
+                options.gpu = std::atoi(argv[++i]);
             }
             else if (arg == "--size" && hasValue)
             {
@@ -154,7 +170,7 @@ int main(int argc, char** argv)
             std::printf("Stream: %s %ux%u %u fps rotation %u\n",
                         header.codec == wincam::Codec::H265 ? "H.265" : "H.264",
                         header.width, header.height, header.fps, header.rotation);
-            if (!decoder.Open(header.codec)) std::printf("Decoder open failed\n");
+            if (!decoder.Open(header.codec, options.decoder, options.gpu)) std::printf("Decoder open failed\n");
         },
         [&](const wincam::Packet& packet) {
             decoder.Decode(packet.data, packet.size, static_cast<int64_t>(packet.pts),
@@ -166,7 +182,9 @@ int main(int argc, char** argv)
                                    if (!reportedOutput)
                                    {
                                        reportedOutput = true;
-                                       std::printf("Camera output: %ux%u\n", renderer.OutputWidth(), renderer.OutputHeight());
+                                       std::printf("Camera output: %ux%u, decoding on %s\n",
+                                                   renderer.OutputWidth(), renderer.OutputHeight(),
+                                                   decoder.LastFrameHardware() ? "GPU" : "CPU");
                                    }
                                }
                            });

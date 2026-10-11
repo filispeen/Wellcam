@@ -9,9 +9,17 @@
 struct AVCodecContext;
 struct AVPacket;
 struct AVFrame;
+struct AVBufferRef;
 
 namespace wincam
 {
+    enum class DecoderMode
+    {
+        Auto,
+        Cpu,
+        Gpu
+    };
+
     class Decoder
     {
     public:
@@ -22,14 +30,20 @@ namespace wincam
         Decoder& operator=(const Decoder&) = delete;
         ~Decoder() { Close(); }
 
-        bool Open(Codec codec);
+        bool Open(Codec codec, DecoderMode mode, int gpuIndex);
         void Close();
         bool IsOpen() const { return context_ != nullptr; }
+        bool LastFrameHardware() const { return lastHardware_; }
         void Decode(const uint8_t* data, size_t size, int64_t pts, const FrameHandler& onFrame);
 
     private:
+        bool OpenContext(Codec codec, bool hardware, int gpuIndex);
+
         AVCodecContext* context_ = nullptr;
         AVPacket* packet_ = nullptr;
         AVFrame* frame_ = nullptr;
+        AVFrame* softwareFrame_ = nullptr;
+        AVBufferRef* hardwareDevice_ = nullptr;
+        bool lastHardware_ = false;
     };
 }
