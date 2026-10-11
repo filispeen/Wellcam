@@ -9,8 +9,9 @@ import com.filispeen.WinCamServer.encoder.VideoEncoder
 private const val BacklogLimit = 2 * 1024 * 1024
 private const val SyncRetryMs = 500L
 
-class VideoStreamer(private val transport: VideoTransport) : ClientListener {
+class VideoStreamer : ClientListener {
     private val lock = Any()
+    private var transport: VideoTransport? = null
     private var encoder: VideoEncoder? = null
     private var header: ByteArray? = null
     private var config: ByteArray? = null
@@ -19,8 +20,16 @@ class VideoStreamer(private val transport: VideoTransport) : ClientListener {
     private var waitingKey = false
     private var lastSyncMs = 0L
 
-    init {
-        transport.clientListener = this
+    fun attach(next: VideoTransport) {
+        synchronized(lock) {
+            if (transport === next) return
+            transport?.clientListener = null
+            transport = next
+            clientPresent = false
+            ready = false
+            waitingKey = false
+            next.clientListener = this
+        }
     }
 
     fun start(
@@ -97,7 +106,8 @@ class VideoStreamer(private val transport: VideoTransport) : ClientListener {
         var syncTarget: VideoEncoder? = null
         synchronized(lock) {
             if (!ready) return
-            val congested = transport.pendingBytes() > BacklogLimit
+            val target = transport ?: return
+            val congested = target.pendingBytes() > BacklogLimit
             if (congested) waitingKey = true
             if (waitingKey && (congested || !key)) {
                 val now = SystemClock.elapsedRealtime()
@@ -109,7 +119,7 @@ class VideoStreamer(private val transport: VideoTransport) : ClientListener {
                 waitingKey = false
                 val flags = if (key) Protocol.FLAG_KEYFRAME else 0
                 val packet = Protocol.packet(Protocol.TYPE_FRAME, flags, ptsUs, bytes, 0, bytes.size)
-                if (!transport.send(packet)) ready = false
+                if (!target.send(packet)) ready = false
             }
         }
         syncTarget?.requestSync()
@@ -118,7 +128,8 @@ class VideoStreamer(private val transport: VideoTransport) : ClientListener {
     private fun sendIntro() {
         val h = header ?: return
         val c = config ?: return
-        if (transport.send(h) && transport.send(c)) {
+        val target = transport ?: return
+        if (target.send(h) && target.send(c)) {
             ready = true
             waitingKey = true
         } else {

@@ -1,6 +1,7 @@
 package com.filispeen.WinCamServer
 
 import android.Manifest
+import android.app.Application
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.util.Size
@@ -100,7 +101,8 @@ private val FallbackSizes = listOf(Size(1280, 720), Size(1920, 1080), Size(2560,
 private val FallbackFps = listOf(24, 30, 60)
 private const val AdbConnection = "USB (ADB)"
 private const val WifiConnection = "Wi-Fi"
-private val ConnectionOptions = listOf(AdbConnection, WifiConnection)
+private const val AoaConnection = "USB (AOA)"
+private val ConnectionOptions = listOf(AdbConnection, AoaConnection, WifiConnection)
 
 private class UnitShape(
     val x: Float,
@@ -664,7 +666,8 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
     val streaming = serverState == ServerState.Listening || serverState == ServerState.Connected
     var localAddress by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(connection) {
-        if (connection == AdbConnection) {
+        viewModel.selectAoa(connection == AoaConnection)
+        if (connection == AdbConnection || connection == AoaConnection) {
             localAddress = null
         } else {
             while (true) {
@@ -676,11 +679,16 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
     val address = when {
         serverState == ServerState.Error -> serverInfo ?: "Error"
         connection == AdbConnection -> "localhost:$ServerPort (adb forward)"
+        connection == AoaConnection -> "USB cable (accessory mode)"
         else -> localAddress?.let { "$it:$ServerPort" } ?: "No Wi-Fi address"
     }
     val statusLabel = when (serverState) {
         ServerState.Stopped -> "Stopped"
-        ServerState.Listening -> if (clientDropped) "Client disconnected" else "Listening"
+        ServerState.Listening -> when {
+            clientDropped -> "Client disconnected"
+            connection == AoaConnection -> "Waiting for USB host"
+            else -> "Listening"
+        }
         ServerState.Connected -> "Connected: ${serverInfo.orEmpty()}"
         ServerState.Error -> "Error"
     }
@@ -960,11 +968,13 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
 @Preview(widthDp = 891, heightDp = 411, showBackground = true)
 @Composable
 private fun CameraServerLandscapePreview() {
-    CameraServerLandscape(remember { ServerViewModel() })
+    val app = LocalContext.current.applicationContext as Application
+    CameraServerLandscape(remember { ServerViewModel(app) })
 }
 
 @Preview(widthDp = 411, heightDp = 891, showBackground = true)
 @Composable
 private fun CameraServerPortraitPreview() {
-    CameraServerLandscape(remember { ServerViewModel() })
+    val app = LocalContext.current.applicationContext as Application
+    CameraServerLandscape(remember { ServerViewModel(app) })
 }

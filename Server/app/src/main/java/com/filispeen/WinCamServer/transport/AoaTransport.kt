@@ -37,7 +37,7 @@ class AoaTransport(
     override var clientListener: ClientListener? = null
 
     private val app = context.applicationContext
-    private val usb = app.getSystemService(Context.USB_SERVICE) as UsbManager
+    private val usb by lazy { app.getSystemService(Context.USB_SERVICE) as UsbManager }
     private val main = Handler(Looper.getMainLooper())
     private val lock = Any()
     private var token: Any? = null

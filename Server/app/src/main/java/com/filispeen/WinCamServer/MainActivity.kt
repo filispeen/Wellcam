@@ -1,5 +1,6 @@
 package com.filispeen.WinCamServer
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -23,5 +24,11 @@ class MainActivity : ComponentActivity() {
                 CameraServerLandscape(viewModel)
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        viewModel.refreshAccessory()
     }
 }

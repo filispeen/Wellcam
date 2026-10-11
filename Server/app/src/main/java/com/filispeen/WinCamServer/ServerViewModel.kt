@@ -1,5 +1,6 @@
 package com.filispeen.WinCamServer
 
+import android.app.Application
 import android.os.Handler
 import android.os.Looper
 import android.view.Surface
@@ -7,9 +8,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import com.filispeen.WinCamServer.encoder.BitrateSettings
 import com.filispeen.WinCamServer.encoder.VideoCodec
+import com.filispeen.WinCamServer.transport.AoaTransport
 import com.filispeen.WinCamServer.transport.ServerState
 import com.filispeen.WinCamServer.transport.TcpServer
 import com.filispeen.WinCamServer.transport.VideoStreamer
@@ -27,7 +29,7 @@ data class EncoderSpec(
     val constantBitrate: Boolean
 )
 
-class ServerViewModel : ViewModel() {
+class ServerViewModel(application: Application) : AndroidViewModel(application) {
     var serverState by mutableStateOf(ServerState.Stopped)
         private set
     var serverInfo by mutableStateOf<String?>(null)
@@ -43,14 +45,32 @@ class ServerViewModel : ViewModel() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var spec: EncoderSpec? = null
 
-    private val server: VideoTransport = TcpServer(ServerPort) { state, info ->
+    private val onState: (ServerState, String?) -> Unit = { state, info ->
         if (state == ServerState.Listening && serverState == ServerState.Connected) clientDropped = true
         if (state != ServerState.Listening) clientDropped = false
         if (state == ServerState.Connected) streamError = null
         serverState = state
         serverInfo = info
     }
-    private val streamer = VideoStreamer(server)
+    private val tcpTransport = TcpServer(ServerPort, onState)
+    private val aoaTransport = AoaTransport(application) { state, info ->
+        if (state == ServerState.Error) streamError = info
+        onState(state, info)
+    }
+    private var server: VideoTransport = tcpTransport
+    private val streamer = VideoStreamer().also { it.attach(tcpTransport) }
+
+    fun selectAoa(enabled: Boolean) {
+        val next: VideoTransport = if (enabled) aoaTransport else tcpTransport
+        if (next === server) return
+        server.stop()
+        server = next
+        streamer.attach(next)
+    }
+
+    fun refreshAccessory() {
+        aoaTransport.refresh()
+    }
 
     fun startServer() {
         server.start()
