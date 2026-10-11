@@ -80,7 +80,7 @@ class AoaTransport(
         }
         unregister(r)
         s?.close()
-        if (s != null) clientListener?.onClientDisconnected()
+        if (s != null && s.hosted) clientListener?.onClientDisconnected()
         post(null, ServerState.Stopped, null)
     }
 
@@ -90,6 +90,7 @@ class AoaTransport(
 
     override fun send(data: ByteArray, offset: Int, length: Int): Boolean {
         val s = synchronized(lock) { session } ?: return false
+        if (!s.hosted) return false
         return s.enqueue(data, offset, length)
     }
 
@@ -170,11 +171,25 @@ class AoaTransport(
             return
         }
         s.start()
-        post(t, ServerState.Connected, "USB host")
+    }
+
+    private fun onHello(s: Session) {
+        val state = synchronized(lock) {
+            if (session !== s) {
+                null
+            } else {
+                val first = !s.hosted
+                s.hosted = true
+                Pair(token, first)
+            }
+        } ?: return
+        s.reset()
+        val t = state.first
+        if (state.second && t != null) post(t, ServerState.Connected, "USB host")
         clientListener?.onClientConnected()
     }
 
-    private fun endSession(s: Session) {
+    private fun endSession(s: Session, reopen: Boolean = false) {
         val current = synchronized(lock) {
             if (session === s) {
                 session = null
@@ -186,9 +201,12 @@ class AoaTransport(
         }
         s.close()
         if (!current) return
-        clientListener?.onClientDisconnected()
+        if (s.hosted) clientListener?.onClientDisconnected()
         val t = synchronized(lock) { token }
-        if (t != null) post(t, ServerState.Listening, null)
+        if (t != null) {
+            post(t, ServerState.Listening, null)
+            if (reopen) main.postDelayed({ if (alive(t)) tryOpen(t) }, 500L)
+        }
     }
 
     private fun fail(t: Any, message: String) {
@@ -205,7 +223,7 @@ class AoaTransport(
         }
         unregister(r)
         s?.close()
-        if (s != null) clientListener?.onClientDisconnected()
+        if (s != null && s.hosted) clientListener?.onClientDisconnected()
         post(null, ServerState.Error, message)
     }
 
@@ -238,9 +256,21 @@ class AoaTransport(
         @Volatile
         private var closed = false
 
+        @Volatile
+        private var epoch = 0
+
+        @Volatile
+        var hosted = false
+
         fun start() {
             writerThread.start()
             readerThread.start()
+        }
+
+        fun reset() {
+            epoch++
+            queue.clear()
+            pendingCount.set(0)
         }
 
         fun pending(): Int = pendingCount.get()
@@ -269,16 +299,17 @@ class AoaTransport(
 
         private fun abort() {
             closed = true
-            main.post { endSession(this) }
+            main.post { endSession(this, true) }
         }
 
         private fun writeLoop() {
             try {
                 while (!closed) {
                     val chunk = queue.take()
+                    val chunkEpoch = epoch
                     var offset = chunk.offset
                     var left = chunk.length
-                    while (left > 0) {
+                    while (left > 0 && chunkEpoch == epoch) {
                         val n = minOf(left, AoaWriteSlice)
                         writeStartedAt = SystemClock.elapsedRealtime()
                         output.write(chunk.data, offset, n)
@@ -286,7 +317,7 @@ class AoaTransport(
                         offset += n
                         left -= n
                     }
-                    pendingCount.addAndGet(-chunk.length)
+                    if (chunkEpoch == epoch) pendingCount.addAndGet(-chunk.length)
                 }
             } catch (e: IOException) {
             } catch (e: InterruptedException) {
@@ -298,7 +329,10 @@ class AoaTransport(
         private fun readLoop() {
             try {
                 val buffer = ByteArray(1024)
-                while (!closed && input.read(buffer) >= 0) {
+                while (!closed) {
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    if (n > 0) onHello(this)
                 }
             } catch (e: IOException) {
             }
