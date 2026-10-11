@@ -189,7 +189,7 @@ namespace wincam
                     for (uint8_t e = 0; e < alt.bNumEndpoints; ++e)
                     {
                         const libusb_endpoint_descriptor& endpoint = alt.endpoint[e];
-                        if ((endpoint.bmAttributes & LIBUSB_ENDPOINT_TRANSFER_TYPE_MASK) != LIBUSB_ENDPOINT_TRANSFER_TYPE_BULK) continue;
+                        if ((endpoint.bmAttributes & LIBUSB_TRANSFER_TYPE_MASK) != LIBUSB_ENDPOINT_TRANSFER_TYPE_BULK) continue;
                         if (endpoint.bEndpointAddress & LIBUSB_ENDPOINT_IN)
                             foundIn = endpoint.bEndpointAddress;
                         else
