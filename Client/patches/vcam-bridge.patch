@@ -37,7 +37,7 @@ index f6f246c..8686954 100644
  	return S_OK;
  }
 diff --git a/VCamSampleSource/MediaSource.cpp b/VCamSampleSource/MediaSource.cpp
-index 3c384d4..7ed6e57 100644
+index 3c384d4..179fe7f 100644
 --- a/VCamSampleSource/MediaSource.cpp
 +++ b/VCamSampleSource/MediaSource.cpp
 @@ -6,6 +6,7 @@
@@ -48,7 +48,15 @@ index 3c384d4..7ed6e57 100644
  
  HRESULT MediaSource::Initialize(IMFAttributes* attributes)
  {
-@@ -120,6 +121,7 @@ STDMETHODIMP MediaSource::QueueEvent(MediaEventType met, REFGUID guidExtendedTyp
+@@ -75,6 +76,7 @@ int MediaSource::GetStreamIndexById(DWORD id)
+ STDMETHODIMP MediaSource::BeginGetEvent(IMFAsyncCallback* pCallback, IUnknown* punkState)
+ {
+ 	WINTRACE(L"MediaSource::BeginGetEvent pCallback:%p punkState:%p", pCallback, punkState);
++	FrameBridge::Trace("source BeginGetEvent called", 0);
+ 	winrt::slim_lock_guard lock(_lock);
+ 	RETURN_HR_IF(MF_E_SHUTDOWN, !_queue);
+ 
+@@ -120,6 +122,7 @@ STDMETHODIMP MediaSource::QueueEvent(MediaEventType met, REFGUID guidExtendedTyp
  STDMETHODIMP MediaSource::CreatePresentationDescriptor(IMFPresentationDescriptor** ppPresentationDescriptor)
  {
  	WINTRACE(L"MediaSource::CreatePresentationDescriptor");
@@ -56,7 +64,15 @@ index 3c384d4..7ed6e57 100644
  	RETURN_HR_IF_NULL(E_POINTER, ppPresentationDescriptor);
  	*ppPresentationDescriptor = nullptr;
  	winrt::slim_lock_guard lock(_lock);
-@@ -147,6 +149,7 @@ STDMETHODIMP MediaSource::Pause()
+@@ -132,6 +135,7 @@ STDMETHODIMP MediaSource::CreatePresentationDescriptor(IMFPresentationDescriptor
+ STDMETHODIMP MediaSource::GetCharacteristics(DWORD* pdwCharacteristics)
+ {
+ 	WINTRACE(L"MediaSource::GetCharacteristics");
++	FrameBridge::Trace("GetCharacteristics called", 0);
+ 	RETURN_HR_IF_NULL(E_POINTER, pdwCharacteristics);
+ 
+ 	*pdwCharacteristics = MFMEDIASOURCE_IS_LIVE;
+@@ -147,6 +151,7 @@ STDMETHODIMP MediaSource::Pause()
  STDMETHODIMP MediaSource::Shutdown()
  {
  	WINTRACE(L"MediaSource::Shutdown");
@@ -64,7 +80,7 @@ index 3c384d4..7ed6e57 100644
  	winrt::slim_lock_guard lock(_lock);
  	RETURN_HR_IF(MF_E_SHUTDOWN, !_queue);
  
-@@ -166,6 +169,7 @@ STDMETHODIMP MediaSource::Shutdown()
+@@ -166,6 +171,7 @@ STDMETHODIMP MediaSource::Shutdown()
  STDMETHODIMP MediaSource::Start(IMFPresentationDescriptor* pPresentationDescriptor, const GUID* pguidTimeFormat, const PROPVARIANT* pvarStartPosition)
  {
  	WINTRACE(L"MediaSource::Start pPresentationDescriptor:%p pguidTimeFormat:%p pvarStartPosition:%p", pPresentationDescriptor, pguidTimeFormat, pvarStartPosition);
@@ -72,7 +88,7 @@ index 3c384d4..7ed6e57 100644
  	RETURN_HR_IF_NULL(E_POINTER, pPresentationDescriptor);
  	RETURN_HR_IF_NULL(E_POINTER, pvarStartPosition);
  	RETURN_HR_IF_MSG(E_INVALIDARG, pguidTimeFormat && *pguidTimeFormat != GUID_NULL, "Unsupported guid time format");
-@@ -207,6 +211,8 @@ STDMETHODIMP MediaSource::Start(IMFPresentationDescriptor* pPresentationDescript
+@@ -207,6 +213,8 @@ STDMETHODIMP MediaSource::Start(IMFPresentationDescriptor* pPresentationDescript
  		}
  
  		WINTRACE(L"MediaSource::Start stream[%i] selected:%i thisSelected:%i", index, selected, thisSelected);
@@ -81,7 +97,47 @@ index 3c384d4..7ed6e57 100644
  		if (selected != thisSelected)
  		{
  			if (selected)
-@@ -316,6 +322,7 @@ STDMETHODIMP MediaSource::GetService(REFGUID siid, REFIID iid, LPVOID* ppvObject
+@@ -259,6 +267,7 @@ STDMETHODIMP MediaSource::Stop()
+ STDMETHODIMP MediaSource::GetSourceAttributes(IMFAttributes** ppAttributes)
+ {
+ 	WINTRACE(L"MediaSource::GetSourceAttributes");
++	FrameBridge::Trace("GetSourceAttributes called", 0);
+ 	RETURN_HR_IF_NULL(E_POINTER, ppAttributes);
+ 	winrt::slim_lock_guard lock(_lock);
+ 
+@@ -270,6 +279,7 @@ STDMETHODIMP MediaSource::GetSourceAttributes(IMFAttributes** ppAttributes)
+ STDMETHODIMP MediaSource::SetMediaType(DWORD dwStreamID, IMFMediaType* pMediaType)
+ {
+ 	WINTRACE(L"MediaSource::SetMediaType dwStreamId:%u pMediaType:%p", dwStreamID, pMediaType);
++	FrameBridge::Trace("SetMediaType called", dwStreamID);
+ 	RETURN_HR_IF_NULL(E_POINTER, pMediaType);
+ 	winrt::slim_lock_guard lock(_lock);
+ 
+@@ -280,6 +290,7 @@ STDMETHODIMP MediaSource::SetMediaType(DWORD dwStreamID, IMFMediaType* pMediaTyp
+ STDMETHODIMP MediaSource::GetStreamAttributes(DWORD dwStreamIdentifier, IMFAttributes** ppAttributes)
+ {
+ 	WINTRACE(L"MediaSource::GetStreamAttributes dwStreamIdentifier:%u", dwStreamIdentifier);
++	FrameBridge::Trace("GetStreamAttributes called", dwStreamIdentifier);
+ 	RETURN_HR_IF_NULL(E_POINTER, ppAttributes);
+ 	*ppAttributes = nullptr;
+ 	winrt::slim_lock_guard lock(_lock);
+@@ -292,6 +303,7 @@ STDMETHODIMP MediaSource::GetStreamAttributes(DWORD dwStreamIdentifier, IMFAttri
+ STDMETHODIMP MediaSource::SetD3DManager(IUnknown* pManager)
+ {
+ 	WINTRACE(L"MediaSource::SetD3DManager pManager:%p", pManager);
++	FrameBridge::Trace("SetD3DManager called", 0);
+ 	RETURN_HR_IF_NULL(E_POINTER, pManager);
+ 	winrt::slim_lock_guard lock(_lock);
+ 
+@@ -305,6 +317,7 @@ STDMETHODIMP MediaSource::SetD3DManager(IUnknown* pManager)
+ // IMFGetService
+ STDMETHODIMP MediaSource::GetService(REFGUID siid, REFIID iid, LPVOID* ppvObject)
+ {
++	FrameBridge::Trace("GetService called", iid.Data1);
+ 	if (iid == __uuidof(IMFDeviceController) || iid == __uuidof(IMFDeviceController2))
+ 		return MF_E_UNSUPPORTED_SERVICE;
+ 
+@@ -316,6 +329,7 @@ STDMETHODIMP MediaSource::GetService(REFGUID siid, REFIID iid, LPVOID* ppvObject
  STDMETHODIMP MediaSource::SetDefaultAllocator(DWORD dwOutputStreamID, IUnknown* pAllocator)
  {
  	WINTRACE(L"MediaSource::SetDefaultAllocator dwOutputStreamID:%u pAllocator:%p", dwOutputStreamID, pAllocator);
@@ -89,8 +145,24 @@ index 3c384d4..7ed6e57 100644
  	RETURN_HR_IF_NULL(E_POINTER, pAllocator);
  	winrt::slim_lock_guard lock(_lock);
  
+@@ -329,6 +343,7 @@ STDMETHODIMP MediaSource::SetDefaultAllocator(DWORD dwOutputStreamID, IUnknown*
+ STDMETHODIMP MediaSource::GetAllocatorUsage(DWORD dwOutputStreamID, DWORD* pdwInputStreamID, MFSampleAllocatorUsage* peUsage)
+ {
+ 	WINTRACE(L"MediaSource::GetAllocatorUsage dwOutputStreamID:%u pdwInputStreamID:%p peUsage:%p", dwOutputStreamID, pdwInputStreamID, peUsage);
++	FrameBridge::Trace("GetAllocatorUsage called", dwOutputStreamID);
+ 	RETURN_HR_IF_NULL(E_POINTER, peUsage);
+ 	RETURN_HR_IF_NULL(E_POINTER, pdwInputStreamID);
+ 	winrt::slim_lock_guard lock(_lock);
+@@ -346,6 +361,7 @@ STDMETHODIMP MediaSource::GetAllocatorUsage(DWORD dwOutputStreamID, DWORD* pdwIn
+ STDMETHODIMP_(NTSTATUS) MediaSource::KsProperty(PKSPROPERTY property, ULONG length, LPVOID data, ULONG dataLength, ULONG* bytesReturned)
+ {
+ 	WINTRACE(L"MediaSource::KsProperty len:%u data:%p dataLength:%u", length, data, dataLength);
++	FrameBridge::Trace("source KsProperty called", 0);
+ 	RETURN_HR_IF_NULL(E_POINTER, property);
+ 	RETURN_HR_IF_NULL(E_POINTER, bytesReturned);
+ 	winrt::slim_lock_guard lock(_lock);
 diff --git a/VCamSampleSource/MediaStream.cpp b/VCamSampleSource/MediaStream.cpp
-index baf739f..55fead3 100644
+index baf739f..0c3a81f 100644
 --- a/VCamSampleSource/MediaStream.cpp
 +++ b/VCamSampleSource/MediaStream.cpp
 @@ -6,10 +6,12 @@
@@ -106,7 +178,7 @@ index baf739f..55fead3 100644
  	_source = source;
  	_index = index;
  
-@@ -20,11 +22,21 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
+@@ -20,11 +22,22 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
  
  	RETURN_IF_FAILED(MFCreateEventQueue(&_queue));
  
@@ -125,6 +197,7 @@ index baf739f..55fead3 100644
 +	else
 +	{
 +		FrameBridge::Trace("camera uses bridge size, width", _width);
++		FrameBridge::Trace("camera uses bridge size, height", _height);
 +	}
 +
 +	const UINT32 NUM_IMAGE_COLS = _width;
@@ -132,7 +205,7 @@ index baf739f..55fead3 100644
  
  	wil::com_ptr_nothrow<IMFMediaType> rgbType;
  	RETURN_IF_FAILED(MFCreateMediaType(&rgbType));
-@@ -35,7 +47,8 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
+@@ -35,7 +48,8 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
  	rgbType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
  	rgbType->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
  	MFSetAttributeRatio(rgbType.get(), MF_MT_FRAME_RATE, 30, 1);
@@ -142,7 +215,7 @@ index baf739f..55fead3 100644
  	rgbType->SetUINT32(MF_MT_AVG_BITRATE, bitrate);
  	MFSetAttributeRatio(rgbType.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
  	types[0] = rgbType.detach();
-@@ -70,6 +83,7 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
+@@ -70,6 +84,7 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
  
  HRESULT MediaStream::Start(IMFMediaType* type)
  {
@@ -150,7 +223,7 @@ index baf739f..55fead3 100644
  	RETURN_HR_IF(MF_E_SHUTDOWN, !_queue || !_allocator);
  
  	if (type)
-@@ -78,11 +92,9 @@ HRESULT MediaStream::Start(IMFMediaType* type)
+@@ -78,11 +93,9 @@ HRESULT MediaStream::Start(IMFMediaType* type)
  		WINTRACE(L"MediaStream::Start format: %s", GUID_ToStringW(_format).c_str());
  	}
  
@@ -165,7 +238,7 @@ index baf739f..55fead3 100644
  	RETURN_IF_FAILED(_queue->QueueEventParamVar(MEStreamStarted, GUID_NULL, S_OK, nullptr));
  	_state = MF_STREAM_STATE_RUNNING;
  	return S_OK;
-@@ -106,17 +118,14 @@ MFSampleAllocatorUsage MediaStream::GetAllocatorUsage()
+@@ -106,17 +119,14 @@ MFSampleAllocatorUsage MediaStream::GetAllocatorUsage()
  HRESULT MediaStream::SetAllocator(IUnknown* allocator)
  {
  	RETURN_HR_IF_NULL(E_POINTER, allocator);
@@ -185,7 +258,15 @@ index baf739f..55fead3 100644
  	return S_OK;
  }
  
-@@ -206,16 +215,65 @@ STDMETHODIMP MediaStream::RequestSample(IUnknown* pToken)
+@@ -193,6 +203,7 @@ STDMETHODIMP MediaStream::GetMediaSource(IMFMediaSource** ppMediaSource)
+ STDMETHODIMP MediaStream::GetStreamDescriptor(IMFStreamDescriptor** ppStreamDescriptor)
+ {
+ 	WINTRACE(L"MediaStream::GetStreamDescriptor");
++	FrameBridge::Trace("stream GetStreamDescriptor called", 0);
+ 	RETURN_HR_IF_NULL(E_POINTER, ppStreamDescriptor);
+ 	*ppStreamDescriptor = nullptr;
+ 	winrt::slim_lock_guard lock(_lock);
+@@ -206,16 +217,65 @@ STDMETHODIMP MediaStream::RequestSample(IUnknown* pToken)
  {
  	//WINTRACE(L"MediaStream::RequestSample pToken:%p", pToken);
  	winrt::slim_lock_guard lock(_lock);
@@ -255,7 +336,7 @@ index baf739f..55fead3 100644
  
  	if (pToken)
  	{
-@@ -229,6 +287,7 @@ STDMETHODIMP MediaStream::RequestSample(IUnknown* pToken)
+@@ -229,6 +289,7 @@ STDMETHODIMP MediaStream::RequestSample(IUnknown* pToken)
  STDMETHODIMP MediaStream::SetStreamState(MF_STREAM_STATE value)
  {
  	WINTRACE(L"MediaStream::SetStreamState current:%u value:%u", _state, value);
