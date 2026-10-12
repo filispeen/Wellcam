@@ -1,3 +1,94 @@
+diff --git a/VCamSampleSource/Activator.cpp b/VCamSampleSource/Activator.cpp
+index f6f246c..8686954 100644
+--- a/VCamSampleSource/Activator.cpp
++++ b/VCamSampleSource/Activator.cpp
+@@ -7,13 +7,16 @@
+ #include "MediaStream.h"
+ #include "MediaSource.h"
+ #include "Activator.h"
++#include "FrameBridge.h"
+ 
+ HRESULT Activator::Initialize()
+ {
+ 	_source = winrt::make_self<MediaSource>();
+ 	RETURN_IF_FAILED(SetUINT32(MF_VIRTUALCAMERA_PROVIDE_ASSOCIATED_CAMERA_SOURCES, 1));
+ 	RETURN_IF_FAILED(SetGUID(MFT_TRANSFORM_CLSID_Attribute, CLSID_VCam));
+-	RETURN_IF_FAILED(_source->Initialize(this));
++	const HRESULT sourceResult = _source->Initialize(this);
++	FrameBridge::Trace("source Initialize hresult", static_cast<DWORD>(sourceResult));
++	RETURN_IF_FAILED(sourceResult);
+ 	return S_OK;
+ }
+ 
+@@ -21,6 +24,7 @@ HRESULT Activator::Initialize()
+ STDMETHODIMP Activator::ActivateObject(REFIID riid, void** ppv)
+ {
+ 	WINTRACE(L"Activator::ActivateObject '%s'", GUID_ToStringW(riid).c_str());
++	FrameBridge::Trace("ActivateObject called", 0);
+ 	RETURN_HR_IF_NULL(E_POINTER, ppv);
+ 	*ppv = nullptr;
+ 
+@@ -47,6 +51,7 @@ STDMETHODIMP Activator::ShutdownObject()
+ STDMETHODIMP Activator::DetachObject()
+ {
+ 	WINTRACE(L"Activator::DetachObject");
++	FrameBridge::Trace("DetachObject called", 0);
+ 	_source = nullptr;
+ 	return S_OK;
+ }
+diff --git a/VCamSampleSource/MediaSource.cpp b/VCamSampleSource/MediaSource.cpp
+index 3c384d4..7ed6e57 100644
+--- a/VCamSampleSource/MediaSource.cpp
++++ b/VCamSampleSource/MediaSource.cpp
+@@ -6,6 +6,7 @@
+ #include "FrameGenerator.h"
+ #include "MediaStream.h"
+ #include "MediaSource.h"
++#include "FrameBridge.h"
+ 
+ HRESULT MediaSource::Initialize(IMFAttributes* attributes)
+ {
+@@ -120,6 +121,7 @@ STDMETHODIMP MediaSource::QueueEvent(MediaEventType met, REFGUID guidExtendedTyp
+ STDMETHODIMP MediaSource::CreatePresentationDescriptor(IMFPresentationDescriptor** ppPresentationDescriptor)
+ {
+ 	WINTRACE(L"MediaSource::CreatePresentationDescriptor");
++	FrameBridge::Trace("CreatePresentationDescriptor called", 0);
+ 	RETURN_HR_IF_NULL(E_POINTER, ppPresentationDescriptor);
+ 	*ppPresentationDescriptor = nullptr;
+ 	winrt::slim_lock_guard lock(_lock);
+@@ -147,6 +149,7 @@ STDMETHODIMP MediaSource::Pause()
+ STDMETHODIMP MediaSource::Shutdown()
+ {
+ 	WINTRACE(L"MediaSource::Shutdown");
++	FrameBridge::Trace("MediaSource Shutdown called", 0);
+ 	winrt::slim_lock_guard lock(_lock);
+ 	RETURN_HR_IF(MF_E_SHUTDOWN, !_queue);
+ 
+@@ -166,6 +169,7 @@ STDMETHODIMP MediaSource::Shutdown()
+ STDMETHODIMP MediaSource::Start(IMFPresentationDescriptor* pPresentationDescriptor, const GUID* pguidTimeFormat, const PROPVARIANT* pvarStartPosition)
+ {
+ 	WINTRACE(L"MediaSource::Start pPresentationDescriptor:%p pguidTimeFormat:%p pvarStartPosition:%p", pPresentationDescriptor, pguidTimeFormat, pvarStartPosition);
++	FrameBridge::Trace("MediaSource Start called", 0);
+ 	RETURN_HR_IF_NULL(E_POINTER, pPresentationDescriptor);
+ 	RETURN_HR_IF_NULL(E_POINTER, pvarStartPosition);
+ 	RETURN_HR_IF_MSG(E_INVALIDARG, pguidTimeFormat && *pguidTimeFormat != GUID_NULL, "Unsupported guid time format");
+@@ -207,6 +211,8 @@ STDMETHODIMP MediaSource::Start(IMFPresentationDescriptor* pPresentationDescript
+ 		}
+ 
+ 		WINTRACE(L"MediaSource::Start stream[%i] selected:%i thisSelected:%i", index, selected, thisSelected);
++		FrameBridge::Trace("MediaSource Start stream selected", static_cast<DWORD>(selected));
++		FrameBridge::Trace("MediaSource Start stream thisSelected", static_cast<DWORD>(thisSelected));
+ 		if (selected != thisSelected)
+ 		{
+ 			if (selected)
+@@ -316,6 +322,7 @@ STDMETHODIMP MediaSource::GetService(REFGUID siid, REFIID iid, LPVOID* ppvObject
+ STDMETHODIMP MediaSource::SetDefaultAllocator(DWORD dwOutputStreamID, IUnknown* pAllocator)
+ {
+ 	WINTRACE(L"MediaSource::SetDefaultAllocator dwOutputStreamID:%u pAllocator:%p", dwOutputStreamID, pAllocator);
++	FrameBridge::Trace("SetDefaultAllocator called", dwOutputStreamID);
+ 	RETURN_HR_IF_NULL(E_POINTER, pAllocator);
+ 	winrt::slim_lock_guard lock(_lock);
+ 
 diff --git a/VCamSampleSource/MediaStream.cpp b/VCamSampleSource/MediaStream.cpp
 index baf739f..55fead3 100644
 --- a/VCamSampleSource/MediaStream.cpp

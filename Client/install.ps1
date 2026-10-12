@@ -30,7 +30,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Patch does not apply to this upstream version" }
         git apply $patch
         if ($LASTEXITCODE -ne 0) { throw "git apply failed" }
-        Write-Host "Patched MediaStream.cpp and MediaStream.h"
+        Write-Host "Patched VCamSampleSource"
     }
 } finally {
     Pop-Location
