@@ -43,8 +43,16 @@ namespace FrameBridge
     inline void Trace(const char* text, DWORD code = 0)
     {
         if (!TraceEnabled()) return;
+        SECURITY_ATTRIBUTES attributes{};
+        attributes.nLength = sizeof(attributes);
+        PSECURITY_DESCRIPTOR descriptor = nullptr;
+        if (ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:(A;;GA;;;WD)", SDDL_REVISION_1, &descriptor, nullptr))
+        {
+            attributes.lpSecurityDescriptor = descriptor;
+        }
         HANDLE file = CreateFileW(TracePath, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                  nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                                  descriptor ? &attributes : nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (descriptor) LocalFree(descriptor);
         if (file == INVALID_HANDLE_VALUE) return;
         SYSTEMTIME time;
         GetLocalTime(&time);
