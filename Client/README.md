@@ -7,7 +7,7 @@ This kit is an integration layer for the public `smourier/VCamSample` Media Foun
 - Your C++ application decodes H.264 or MJPEG to uncompressed BGRA (or uses an existing decoded frame).
 - Create a `FrameBridge::Writer`, call `Open()` once, then `Write(bgra, width, height)` for each frame from that same process.
 - The Media Foundation source DLL is loaded by Windows camera infrastructure in other processes, so the camera source cannot safely consume ordinary in-process pointers. It reads the latest frame through a named shared-memory mapping.
-- The camera advertises RGB32 at 30 fps. Its size is read from the bridge when `VCamSample.exe` starts, or 1280x720 if no frame was published yet.
+- The camera advertises RGB32 at 30 fps. Its size is read from the bridge when an application opens the camera, or 1280x720 if no frame was published yet.
 
 **Important:** H.264/MJPEG are encoded formats. A virtual camera generally publishes decoded video frames, not the incoming compressed bitstream directly. This kit's demo sender uses Media Foundation Source Reader to decode a video file or URL to BGRA. For a live H.264/MJPEG stream already handled by your app, integrate the `WriteBGRA` call after your existing decoder.
 
@@ -52,9 +52,9 @@ Use the matching 64-bit build and 64-bit `regsvr32` from `C:\Windows\System32`.
 
 ## 3. Start the virtual camera
 
-Run the built `VCamSample.exe`. The upstream app creates and starts the virtual camera and removes it when the app exits. Keep it running while testing.
+Run `wincam_client.exe` from an elevated terminal (section 5a). It creates and starts the virtual camera "WinCam" itself with `MFCreateVirtualCamera` and removes it on exit. `VCamSample.exe` is not needed and must not run at the same time. Use `--no-vcam` to only fill the bridge.
 
-Test with the Windows Camera app or OBS. The camera name is controlled by the upstream sample.
+Test with the Windows Camera app, Discord or OBS.
 
 ## 4. Send frames from your own application
 
@@ -70,7 +70,7 @@ writer.Write(bgra, width, height);
 
 `bgra` points to width*height*4 bytes in BGRA channel order, up to 3840x2160. The writer keeps the mapping open, so `Open()` is called once. `Open()` needs an elevated process because the mapping lives in the `Global\` namespace. The camera source reads the latest frame whenever Windows requests a sample.
 
-The camera size is fixed when `VCamSample.exe` starts: it uses the size of the last frame published to the bridge, or 1280x720 if there is none. If the published size differs from the camera size, the camera shows black. Start the sender and publish a frame before starting `VCamSample.exe`.
+The camera size is fixed when an application opens the camera: it uses the size of the last frame published to the bridge, or 1280x720 if there is none. If the published size differs from the camera size, the camera shows black. Start the sender and publish a frame before opening the camera.
 The mapping uses a global named object and an ACL that allows LocalSystem, Administrators, and authenticated users. This is intended for a local development machine; do not use it as-is in a multi-user/security-sensitive deployment. Change the names and security descriptor for your environment.
 
 ## 5. Demo sender (optional)
@@ -90,7 +90,7 @@ This is a test sender. Run it from an elevated terminal. The source must be at m
 
 ## 5a. WinCam PC client
 
-`wincam_client.exe` receives the phone stream (Protocol v2) over TCP or USB (AOA), decodes H.264/H.265 with FFmpeg, applies rotation, and publishes BGRA frames to the bridge.
+`wincam_client.exe` receives the phone stream (Protocol v2) over TCP or USB (AOA), decodes H.264/H.265 with FFmpeg, applies rotation, publishes BGRA frames to the bridge, and creates the virtual camera "WinCam" in the same process (no separate `VCamSample.exe`).
 
 Build (once, FFmpeg through vcpkg takes 15 to 30 minutes the first time):
 
@@ -125,7 +125,7 @@ build\Release\wincam_client.exe --aoa
 ## 6. Unregister / remove the virtual camera
 
 1. Close apps that are using the camera.
-2. Exit `VCamSample.exe`; it calls `IMFVirtualCamera::Remove()`.
+2. Exit `wincam_client.exe`; it calls `IMFVirtualCamera::Remove()`.
 3. In an elevated Command Prompt, unregister the COM DLL:
 
 ```bat
@@ -138,6 +138,6 @@ If the camera remains listed, reboot or restart the Windows camera/frame-server 
 
 - Windows 10 does not expose the same `MFCreateVirtualCamera` API; this kit targets Windows 11.
 - The shared-memory transport carries decoded BGRA frames, not H.264/MJPEG packets.
-- Camera resolution is fixed when `VCamSample.exe` starts (see section 4); 30 fps is fixed.
+- Camera resolution is fixed when an application opens the camera (see section 4); 30 fps is fixed.
 - The patch modifies an upstream sample. Review its license and source before redistribution.
 - This integration has not been compiled or run in this environment. Verify it on your target Windows/SDK version; it is provided as source and integration instructions, not as a prebuilt guaranteed-working driver.

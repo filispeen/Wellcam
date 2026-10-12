@@ -14,7 +14,8 @@ add_executable(wincam_client
     src/tcp_transport.cpp
     src/aoa_transport.cpp
     src/decoder.cpp
-    src/renderer.cpp)
+    src/renderer.cpp
+    src/vcam.cpp)
 
 target_include_directories(wincam_client PRIVATE
     src
@@ -28,7 +29,12 @@ target_link_libraries(wincam_client PRIVATE
     ${FFMPEG_LIBRARIES}
     ${LIBUSB_LIBRARY}
     ws2_32
-    advapi32)
+    advapi32
+    ole32
+    mfplat
+    mf
+    mfuuid
+    mfsensorgroup)
 
 target_compile_definitions(wincam_client PRIVATE
     NOMINMAX

@@ -16,6 +16,7 @@
 #include "protocol.h"
 #include "renderer.h"
 #include "transport.h"
+#include "vcam.h"
 
 namespace
 {
@@ -39,6 +40,7 @@ namespace
         uint32_t height = 0;
         wincam::DecoderMode decoder = wincam::DecoderMode::Auto;
         int gpu = 0;
+        bool virtualCamera = true;
     };
 
     void PrintUsage()
@@ -53,6 +55,7 @@ namespace
             "  --size WxH          force camera output size\n"
             "  --decoder MODE      auto (default), cpu or gpu (D3D11VA, any vendor)\n"
             "  --gpu INDEX         adapter index for GPU decoding (default 0)\n"
+            "  --no-vcam           do not create the virtual camera, only fill the frame bridge\n"
             "Keys: r rotate output by 90 degrees, q quit\n"
             "Run from an elevated terminal.\n");
     }
@@ -67,6 +70,10 @@ namespace
             if (arg == "--aoa")
             {
                 options.aoa = true;
+            }
+            else if (arg == "--no-vcam")
+            {
+                options.virtualCamera = false;
             }
             else if (arg == "--tcp" && hasValue)
             {
@@ -148,6 +155,21 @@ int main(int argc, char** argv)
         std::fprintf(stderr, "Cannot open the shared frame bridge (error %lu). Run from an elevated terminal.\n",
                      GetLastError());
         return 1;
+    }
+
+    wincam::VirtualCamera camera;
+    if (options.virtualCamera)
+    {
+        const long result = camera.Start(L"WinCam");
+        if (result < 0)
+        {
+            std::fprintf(stderr,
+                         "Cannot start the virtual camera (0x%08lX). Register VCamSampleSource.dll with regsvr32 "
+                         "from an elevated terminal and close VCamSample.exe if it is running.\n",
+                         static_cast<unsigned long>(result));
+            return 1;
+        }
+        std::printf("Virtual camera \"WinCam\" started.\n");
     }
 
     std::unique_ptr<wincam::Transport> transport = options.aoa
@@ -266,6 +288,7 @@ int main(int argc, char** argv)
         }
     }
 
+    camera.Stop();
     writer.Close();
     return 0;
 }
