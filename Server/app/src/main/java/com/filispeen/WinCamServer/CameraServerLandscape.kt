@@ -664,6 +664,8 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
     var streamError by viewModel::streamError
     val failStream: (String) -> Unit = viewModel::failStream
     val streaming = serverState == ServerState.Listening || serverState == ServerState.Connected
+    val dim = remember { DimController() }
+    ScreenDimEffect(streaming, dim)
     var localAddress by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(connection) {
         viewModel.selectAoa(connection == AoaConnection)
@@ -864,6 +866,7 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
+            .trackActivity(dim)
             .background(ColorBg)
             .safeDrawingPadding()
     ) {
