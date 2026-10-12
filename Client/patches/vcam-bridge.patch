@@ -37,7 +37,7 @@ index f6f246c..8686954 100644
  	return S_OK;
  }
 diff --git a/VCamSampleSource/MediaSource.cpp b/VCamSampleSource/MediaSource.cpp
-index 3c384d4..e298f3a 100644
+index 3c384d4..5fce5f0 100644
 --- a/VCamSampleSource/MediaSource.cpp
 +++ b/VCamSampleSource/MediaSource.cpp
 @@ -6,6 +6,7 @@
@@ -153,7 +153,7 @@ index 3c384d4..e298f3a 100644
  	RETURN_HR_IF_NULL(E_POINTER, peUsage);
  	RETURN_HR_IF_NULL(E_POINTER, pdwInputStreamID);
  	winrt::slim_lock_guard lock(_lock);
-@@ -346,6 +361,10 @@ STDMETHODIMP MediaSource::GetAllocatorUsage(DWORD dwOutputStreamID, DWORD* pdwIn
+@@ -346,12 +361,36 @@ STDMETHODIMP MediaSource::GetAllocatorUsage(DWORD dwOutputStreamID, DWORD* pdwIn
  STDMETHODIMP_(NTSTATUS) MediaSource::KsProperty(PKSPROPERTY property, ULONG length, LPVOID data, ULONG dataLength, ULONG* bytesReturned)
  {
  	WINTRACE(L"MediaSource::KsProperty len:%u data:%p dataLength:%u", length, data, dataLength);
@@ -161,9 +161,35 @@ index 3c384d4..e298f3a 100644
 +	FrameBridge::Trace("source KsProperty set", property ? property->Set.Data1 : 0);
 +	FrameBridge::Trace("source KsProperty id", property ? property->Id : 0);
 +	FrameBridge::Trace("source KsProperty flags", property ? property->Flags : 0);
++	FrameBridge::Trace("source KsProperty dataLength", dataLength);
  	RETURN_HR_IF_NULL(E_POINTER, property);
  	RETURN_HR_IF_NULL(E_POINTER, bytesReturned);
  	winrt::slim_lock_guard lock(_lock);
+ 
+ 	WINTRACE(L"MediaSource::KsProperty prop:%s", PKSIDENTIFIER_ToString(property, length).c_str());
+ 
++	struct PrivacyControl
++	{
++		KSPROPERTY Property;
++		LONG Value;
++		ULONG Flags;
++		ULONG Capabilities;
++	};
++
++	if (property->Set.Data1 == 0xC6E13370 && property->Id == 8 && (property->Flags & KSPROPERTY_TYPE_GET) && data && dataLength >= sizeof(PrivacyControl))
++	{
++		auto control = static_cast<PrivacyControl*>(data);
++		control->Value = 0;
++		control->Flags = 0x2;
++		control->Capabilities = 0x2;
++		*bytesReturned = sizeof(PrivacyControl);
++		FrameBridge::Trace("source KsProperty privacy answered", 0);
++		return S_OK;
++	}
++
+ 	// right now, we don't expose any property, but this is where we'll typically be asked for
+ 	// 
+ 	// KSPROPSETID_Pin, KSPROPSETID_Topology, PROPSETID_VIDCAP_CAMERACONTROL, PROPSETID_VIDCAP_VIDEOPROCAMP
 diff --git a/VCamSampleSource/MediaStream.cpp b/VCamSampleSource/MediaStream.cpp
 index baf739f..b82f185 100644
 --- a/VCamSampleSource/MediaStream.cpp
