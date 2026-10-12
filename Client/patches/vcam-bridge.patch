@@ -37,7 +37,7 @@ index f6f246c..8686954 100644
  	return S_OK;
  }
 diff --git a/VCamSampleSource/MediaSource.cpp b/VCamSampleSource/MediaSource.cpp
-index 3c384d4..179fe7f 100644
+index 3c384d4..e298f3a 100644
 --- a/VCamSampleSource/MediaSource.cpp
 +++ b/VCamSampleSource/MediaSource.cpp
 @@ -6,6 +6,7 @@
@@ -153,16 +153,19 @@ index 3c384d4..179fe7f 100644
  	RETURN_HR_IF_NULL(E_POINTER, peUsage);
  	RETURN_HR_IF_NULL(E_POINTER, pdwInputStreamID);
  	winrt::slim_lock_guard lock(_lock);
-@@ -346,6 +361,7 @@ STDMETHODIMP MediaSource::GetAllocatorUsage(DWORD dwOutputStreamID, DWORD* pdwIn
+@@ -346,6 +361,10 @@ STDMETHODIMP MediaSource::GetAllocatorUsage(DWORD dwOutputStreamID, DWORD* pdwIn
  STDMETHODIMP_(NTSTATUS) MediaSource::KsProperty(PKSPROPERTY property, ULONG length, LPVOID data, ULONG dataLength, ULONG* bytesReturned)
  {
  	WINTRACE(L"MediaSource::KsProperty len:%u data:%p dataLength:%u", length, data, dataLength);
 +	FrameBridge::Trace("source KsProperty called", 0);
++	FrameBridge::Trace("source KsProperty set", property ? property->Set.Data1 : 0);
++	FrameBridge::Trace("source KsProperty id", property ? property->Id : 0);
++	FrameBridge::Trace("source KsProperty flags", property ? property->Flags : 0);
  	RETURN_HR_IF_NULL(E_POINTER, property);
  	RETURN_HR_IF_NULL(E_POINTER, bytesReturned);
  	winrt::slim_lock_guard lock(_lock);
 diff --git a/VCamSampleSource/MediaStream.cpp b/VCamSampleSource/MediaStream.cpp
-index baf739f..0c3a81f 100644
+index baf739f..b82f185 100644
 --- a/VCamSampleSource/MediaStream.cpp
 +++ b/VCamSampleSource/MediaStream.cpp
 @@ -6,10 +6,12 @@
@@ -344,6 +347,14 @@ index baf739f..0c3a81f 100644
  	if (_state = value)
  		return S_OK;
  	switch (value)
+@@ -267,6 +328,7 @@ STDMETHODIMP MediaStream::GetStreamState(MF_STREAM_STATE* value)
+ STDMETHODIMP_(NTSTATUS) MediaStream::KsProperty(PKSPROPERTY property, ULONG length, LPVOID data, ULONG dataLength, ULONG* bytesReturned)
+ {
+ 	WINTRACE(L"MediaStream::KsProperty len:%u data:%p dataLength:%u", length, data, dataLength);
++	FrameBridge::Trace("stream KsProperty called", property ? property->Set.Data1 : 0);
+ 	RETURN_HR_IF_NULL(E_POINTER, property);
+ 	RETURN_HR_IF_NULL(E_POINTER, bytesReturned);
+ 	winrt::slim_lock_guard lock(_lock);
 diff --git a/VCamSampleSource/MediaStream.h b/VCamSampleSource/MediaStream.h
 index 7c2c640..184090a 100644
 --- a/VCamSampleSource/MediaStream.h
