@@ -1,5 +1,5 @@
 diff --git a/VCamSampleSource/MediaStream.cpp b/VCamSampleSource/MediaStream.cpp
-index baf739f..ed8ee8d 100644
+index baf739f..1d6f81d 100644
 --- a/VCamSampleSource/MediaStream.cpp
 +++ b/VCamSampleSource/MediaStream.cpp
 @@ -6,10 +6,12 @@
@@ -51,16 +51,22 @@ index baf739f..ed8ee8d 100644
  	rgbType->SetUINT32(MF_MT_AVG_BITRATE, bitrate);
  	MFSetAttributeRatio(rgbType.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
  	types[0] = rgbType.detach();
-@@ -80,7 +93,7 @@ HRESULT MediaStream::Start(IMFMediaType* type)
+@@ -78,11 +91,9 @@ HRESULT MediaStream::Start(IMFMediaType* type)
+ 		WINTRACE(L"MediaStream::Start format: %s", GUID_ToStringW(_format).c_str());
+ 	}
  
- 	// at this point, set D3D manager may have not been called
- 	// so we want to create a D2D1 renter target anyway
+-	// at this point, set D3D manager may have not been called
+-	// so we want to create a D2D1 renter target anyway
 -	RETURN_IF_FAILED(_generator.EnsureRenderTarget(NUM_IMAGE_COLS, NUM_IMAGE_ROWS));
-+	RETURN_IF_FAILED(_generator.EnsureRenderTarget(_width, _height));
- 
- 	RETURN_IF_FAILED(_allocator->InitializeSampleAllocator(10, type));
+-
+-	RETURN_IF_FAILED(_allocator->InitializeSampleAllocator(10, type));
++	const HRESULT allocatorResult = _allocator->InitializeSampleAllocator(10, type);
++	FrameBridge::Trace("stream start, allocator hresult", static_cast<DWORD>(allocatorResult));
++	RETURN_IF_FAILED(allocatorResult);
  	RETURN_IF_FAILED(_queue->QueueEventParamVar(MEStreamStarted, GUID_NULL, S_OK, nullptr));
-@@ -112,11 +125,7 @@ HRESULT MediaStream::SetAllocator(IUnknown* allocator)
+ 	_state = MF_STREAM_STATE_RUNNING;
+ 	return S_OK;
+@@ -112,11 +123,7 @@ HRESULT MediaStream::SetAllocator(IUnknown* allocator)
  
  HRESULT MediaStream::SetD3DManager(IUnknown* manager)
  {
@@ -73,7 +79,26 @@ index baf739f..ed8ee8d 100644
  	return S_OK;
  }
  
-@@ -213,9 +222,39 @@ STDMETHODIMP MediaStream::RequestSample(IUnknown* pToken)
+@@ -209,13 +216,57 @@ STDMETHODIMP MediaStream::RequestSample(IUnknown* pToken)
+ 	RETURN_HR_IF(MF_E_SHUTDOWN, !_allocator || !_queue);
+ 
+ 	wil::com_ptr_nothrow<IMFSample> sample;
+-	RETURN_IF_FAILED(_allocator->AllocateSample(&sample));
++	const HRESULT allocated = _allocator->AllocateSample(&sample);
++	if (FAILED(allocated))
++	{
++		if (_lastFrameState != -1)
++		{
++			_lastFrameState = -1;
++			FrameBridge::Trace("AllocateSample failed", static_cast<DWORD>(allocated));
++		}
++		return allocated;
++	}
++	if (!_loggedRequest)
++	{
++		_loggedRequest = true;
++		FrameBridge::Trace("RequestSample first call", 0);
++	}
  	RETURN_IF_FAILED(sample->SetSampleTime(MFGetSystemTime()));
  	RETURN_IF_FAILED(sample->SetSampleDuration(333333));
  
@@ -117,15 +142,16 @@ index baf739f..ed8ee8d 100644
  	if (pToken)
  	{
 diff --git a/VCamSampleSource/MediaStream.h b/VCamSampleSource/MediaStream.h
-index 7c2c640..3906f26 100644
+index 7c2c640..ff7ebc3 100644
 --- a/VCamSampleSource/MediaStream.h
 +++ b/VCamSampleSource/MediaStream.h
-@@ -57,4 +57,7 @@ private:
+@@ -57,4 +57,8 @@ private:
  	wil::com_ptr_nothrow<IMFMediaSource> _source;
  	wil::com_ptr_nothrow<IMFVideoSampleAllocatorEx> _allocator;
  	int _index;
 +	UINT32 _width = 1280;
 +	UINT32 _height = 720;
 +	int _lastFrameState = 0;
++	bool _loggedRequest = false;
  };
 \ No newline at end of file
