@@ -16,8 +16,8 @@ namespace FrameBridge
     constexpr uint32_t MaxHeight = 2160;
     constexpr uint32_t BytesPerPixel = 4;
     constexpr uint32_t MaxFrameBytes = MaxWidth * MaxHeight * BytesPerPixel;
-    constexpr uint32_t DefaultWidth = 1280;
-    constexpr uint32_t DefaultHeight = 720;
+    constexpr uint32_t DefaultWidth = 1920;
+    constexpr uint32_t DefaultHeight = 1080;
 
     struct Header
     {
@@ -129,6 +129,18 @@ namespace FrameBridge
             header->bytes = bytes;
             InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&header->sequence));
             return true;
+        }
+
+        void Announce(uint32_t width, uint32_t height)
+        {
+            if (!view_ || width == 0 || height == 0 || width > MaxWidth || height > MaxHeight) return;
+            auto* header = reinterpret_cast<Header*>(view_);
+            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&header->sequence));
+            header->magic = Magic;
+            header->width = width;
+            header->height = height;
+            header->bytes = 0;
+            InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&header->sequence));
         }
 
         void Clear()

@@ -30,10 +30,9 @@ namespace wincam
         int rotation_ = 0;
         uint32_t lockedWidth_ = 0;
         uint32_t lockedHeight_ = 0;
+        uint64_t layoutKey_ = 0;
         SwsContext* convert_ = nullptr;
-        SwsContext* scale_ = nullptr;
         std::vector<uint8_t> converted_;
-        std::vector<uint8_t> rotated_;
         std::vector<uint8_t> canvas_;
     };
 }

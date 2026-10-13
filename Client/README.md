@@ -7,7 +7,7 @@ This kit is an integration layer for the public `smourier/VCamSample` Media Foun
 - Your C++ application decodes H.264 or MJPEG to uncompressed BGRA (or uses an existing decoded frame).
 - Create a `FrameBridge::Writer`, call `Open()` once, then `Write(bgra, width, height)` for each frame from that same process.
 - The Media Foundation source DLL is loaded by Windows camera infrastructure in other processes, so the camera source cannot safely consume ordinary in-process pointers. It reads the latest frame through a named shared-memory mapping.
-- The camera advertises RGB32 at 30 fps. Its size is read from the bridge when an application opens the camera, or 1280x720 if no frame was published yet.
+- The camera advertises RGB32 at 30 fps. Its size is the size announced in the bridge by the client at start (1920x1080 by default, or `--size`), read when the camera is created.
 
 **Important:** H.264/MJPEG are encoded formats. A virtual camera generally publishes decoded video frames, not the incoming compressed bitstream directly. This kit's demo sender uses Media Foundation Source Reader to decode a video file or URL to BGRA. For a live H.264/MJPEG stream already handled by your app, integrate the `WriteBGRA` call after your existing decoder.
 
@@ -70,7 +70,7 @@ writer.Write(bgra, width, height);
 
 `bgra` points to width*height*4 bytes in BGRA channel order, up to 3840x2160. The writer keeps the mapping open, so `Open()` is called once. `Open()` needs an elevated process because the mapping lives in the `Global\` namespace. The camera source reads the latest frame whenever Windows requests a sample.
 
-The camera size is fixed when an application opens the camera: it uses the size of the last frame published to the bridge, or 1280x720 if there is none. If the published size differs from the camera size, the camera shows black. Start the sender and publish a frame before opening the camera.
+The camera size is fixed when the camera is created at client start: the client announces its output size in the bridge (1920x1080 by default, or `--size`) before creating the camera, and always letterboxes the decoded stream into that size, so phone resolution or rotation changes never change the camera size. If the published size differs from the camera size, the camera shows black.
 The mapping uses a global named object and an ACL that allows LocalSystem, Administrators, and authenticated users. This is intended for a local development machine; do not use it as-is in a multi-user/security-sensitive deployment. Change the names and security descriptor for your environment.
 
 ## 5. Demo sender (optional)
@@ -117,7 +117,7 @@ build\Release\wincam_client.exe --aoa
 
 - ADB mode: run `adb forward tcp:11203 tcp:11203` first.
 - AOA mode: needs WinUSB (Zadig) as described in `Server\docs\AOA_PROTOCOL.md`. `--vid` and `--pid` (hex) limit which device is probed.
-- `--size WxH` forces the camera output size. Without it the size is taken from the bridge or from the first stream.
+- `--size WxH` sets the camera output size (default 1920x1080). The stream is rotated, scaled and letterboxed into it.
 - `--decoder auto|cpu|gpu` selects decoding. `auto` (default) uses D3D11VA (AMD, NVIDIA and Intel) and falls back to the CPU when the GPU cannot decode the stream. `--gpu INDEX` picks the adapter.
 - `--offset DEGREES` is added to the rotation from the stream header (default 270). Key `r` adds another 90 at runtime.
 - The client reconnects automatically when the stream or cable drops.

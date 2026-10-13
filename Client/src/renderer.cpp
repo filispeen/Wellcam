@@ -32,52 +32,67 @@ namespace wincam
             }
         }
 
-        void Rotate(const uint8_t* source, uint32_t width, uint32_t height, int degrees, uint8_t* destination)
+        void RotateInto(const uint32_t* src, uint32_t width, uint32_t height, int degrees, uint32_t* dst, size_t dstStride)
         {
-            const auto* src = reinterpret_cast<const uint32_t*>(source);
-            auto* dst = reinterpret_cast<uint32_t*>(destination);
+            if (degrees == 0)
+            {
+                for (uint32_t y = 0; y < height; ++y)
+                    std::memcpy(dst + y * dstStride, src + static_cast<size_t>(y) * width, static_cast<size_t>(width) * 4);
+                return;
+            }
 
             if (degrees == 180)
             {
-                const size_t count = static_cast<size_t>(width) * height;
-                for (size_t i = 0; i < count; ++i) dst[i] = src[count - 1 - i];
+                for (uint32_t y = 0; y < height; ++y)
+                {
+                    const uint32_t* row = src + static_cast<size_t>(height - 1 - y) * width;
+                    uint32_t* out = dst + y * dstStride;
+                    for (uint32_t x = 0; x < width; ++x) out[x] = row[width - 1 - x];
+                }
                 return;
             }
 
-            if (degrees == 90)
+            constexpr uint32_t tile = 32;
+            for (uint32_t r0 = 0; r0 < width; r0 += tile)
             {
-                for (uint32_t r = 0; r < width; ++r)
-                    for (uint32_t c = 0; c < height; ++c)
-                        dst[static_cast<size_t>(r) * height + c] = src[static_cast<size_t>(height - 1 - c) * width + r];
-                return;
+                const uint32_t r1 = std::min(r0 + tile, width);
+                for (uint32_t c0 = 0; c0 < height; c0 += tile)
+                {
+                    const uint32_t c1 = std::min(c0 + tile, height);
+                    if (degrees == 90)
+                    {
+                        for (uint32_t r = r0; r < r1; ++r)
+                            for (uint32_t c = c0; c < c1; ++c)
+                                dst[static_cast<size_t>(r) * dstStride + c] = src[static_cast<size_t>(height - 1 - c) * width + r];
+                    }
+                    else
+                    {
+                        for (uint32_t r = r0; r < r1; ++r)
+                            for (uint32_t c = c0; c < c1; ++c)
+                                dst[static_cast<size_t>(r) * dstStride + c] = src[static_cast<size_t>(c) * width + (width - 1 - r)];
+                    }
+                }
             }
-
-            for (uint32_t r = 0; r < width; ++r)
-                for (uint32_t c = 0; c < height; ++c)
-                    dst[static_cast<size_t>(r) * height + c] = src[static_cast<size_t>(c) * width + (width - 1 - r)];
         }
     }
 
     Renderer::Renderer(FrameBridge::Writer& writer, uint32_t forcedWidth, uint32_t forcedHeight)
         : writer_(writer)
     {
-        uint32_t width = 0;
-        uint32_t height = 0;
         if (forcedWidth > 0 && forcedHeight > 0)
             LockOutput(forcedWidth, forcedHeight);
-        else if (FrameBridge::PeekSize(width, height))
-            LockOutput(width, height);
+        else
+            LockOutput(FrameBridge::DefaultWidth, FrameBridge::DefaultHeight);
     }
 
     Renderer::~Renderer()
     {
         if (convert_) sws_freeContext(convert_);
-        if (scale_) sws_freeContext(scale_);
     }
 
     void Renderer::SetRotation(int degrees)
     {
-        rotation_ = ((degrees % 360) + 360) % 360;
+        rotation_ = (((degrees % 360) + 360) % 360) / 90 * 90;
     }
 
     void Renderer::LockOutput(uint32_t width, uint32_t height)
@@ -94,11 +109,26 @@ namespace wincam
     {
         const int srcWidth = frame.width;
         const int srcHeight = frame.height;
-        if (srcWidth <= 0 || srcHeight <= 0 || frame.format < 0) return false;
+        if (srcWidth <= 0 || srcHeight <= 0 || frame.format < 0 || lockedWidth_ == 0) return false;
+
+        const bool quarter = rotation_ == 90 || rotation_ == 270;
+        const uint32_t rotatedWidth = static_cast<uint32_t>(quarter ? srcHeight : srcWidth);
+        const uint32_t rotatedHeight = static_cast<uint32_t>(quarter ? srcWidth : srcHeight);
+
+        const double factor = std::min(static_cast<double>(lockedWidth_) / rotatedWidth,
+                                       static_cast<double>(lockedHeight_) / rotatedHeight);
+        const uint32_t fitWidth = std::max<uint32_t>(1, static_cast<uint32_t>(rotatedWidth * factor));
+        const uint32_t fitHeight = std::max<uint32_t>(1, static_cast<uint32_t>(rotatedHeight * factor));
+        const uint32_t offsetX = (lockedWidth_ - std::min(fitWidth, lockedWidth_)) / 2;
+        const uint32_t offsetY = (lockedHeight_ - std::min(fitHeight, lockedHeight_)) / 2;
+
+        const uint32_t preWidth = quarter ? fitHeight : fitWidth;
+        const uint32_t preHeight = quarter ? fitWidth : fitHeight;
 
         convert_ = sws_getCachedContext(
             convert_, srcWidth, srcHeight, static_cast<AVPixelFormat>(frame.format),
-            srcWidth, srcHeight, AV_PIX_FMT_BGRA, SWS_BILINEAR, nullptr, nullptr, nullptr);
+            static_cast<int>(preWidth), static_cast<int>(preHeight), AV_PIX_FMT_BGRA, SWS_BILINEAR,
+            nullptr, nullptr, nullptr);
         if (!convert_) return false;
 
         sws_setColorspaceDetails(
@@ -106,51 +136,24 @@ namespace wincam
             frame.color_range == AVCOL_RANGE_JPEG ? 1 : 0,
             sws_getCoefficients(SWS_CS_DEFAULT), 1, 0, 1 << 16, 1 << 16);
 
-        const size_t convertedBytes = static_cast<size_t>(srcWidth) * srcHeight * 4;
-        converted_.resize(convertedBytes);
+        converted_.resize(static_cast<size_t>(preWidth) * preHeight * 4);
         uint8_t* convertedPlanes[4] = {converted_.data(), nullptr, nullptr, nullptr};
-        const int convertedStrides[4] = {srcWidth * 4, 0, 0, 0};
+        const int convertedStrides[4] = {static_cast<int>(preWidth) * 4, 0, 0, 0};
         sws_scale(convert_, frame.data, frame.linesize, 0, srcHeight, convertedPlanes, convertedStrides);
 
-        uint32_t outWidth = static_cast<uint32_t>(srcWidth);
-        uint32_t outHeight = static_cast<uint32_t>(srcHeight);
-        const uint8_t* pixels = converted_.data();
-
-        if (rotation_ != 0)
+        const size_t canvasPixels = static_cast<size_t>(lockedWidth_) * lockedHeight_;
+        const uint64_t key = (static_cast<uint64_t>(fitWidth) << 32) | fitHeight;
+        if (canvas_.size() != canvasPixels * 4 || layoutKey_ != key)
         {
-            rotated_.resize(convertedBytes);
-            Rotate(converted_.data(), outWidth, outHeight, rotation_, rotated_.data());
-            if (rotation_ != 180) std::swap(outWidth, outHeight);
-            pixels = rotated_.data();
+            canvas_.resize(canvasPixels * 4);
+            auto* fill = reinterpret_cast<uint32_t*>(canvas_.data());
+            std::fill(fill, fill + canvasPixels, 0xFF000000u);
+            layoutKey_ = key;
         }
 
-        if (lockedWidth_ == 0) LockOutput(outWidth, outHeight);
-
-        if (outWidth == lockedWidth_ && outHeight == lockedHeight_)
-            return writer_.Write(pixels, outWidth, outHeight);
-
-        const double factor = std::min(static_cast<double>(lockedWidth_) / outWidth,
-                                       static_cast<double>(lockedHeight_) / outHeight);
-        const int fitWidth = std::max(1, static_cast<int>(outWidth * factor));
-        const int fitHeight = std::max(1, static_cast<int>(outHeight * factor));
-        const int offsetX = (static_cast<int>(lockedWidth_) - fitWidth) / 2;
-        const int offsetY = (static_cast<int>(lockedHeight_) - fitHeight) / 2;
-
-        scale_ = sws_getCachedContext(
-            scale_, static_cast<int>(outWidth), static_cast<int>(outHeight), AV_PIX_FMT_BGRA,
-            fitWidth, fitHeight, AV_PIX_FMT_BGRA, SWS_BILINEAR, nullptr, nullptr, nullptr);
-        if (!scale_) return false;
-
-        canvas_.resize(static_cast<size_t>(lockedWidth_) * lockedHeight_ * 4);
         auto* canvas32 = reinterpret_cast<uint32_t*>(canvas_.data());
-        std::fill(canvas32, canvas32 + static_cast<size_t>(lockedWidth_) * lockedHeight_, 0xFF000000u);
-
-        const uint8_t* scaleSource[4] = {pixels, nullptr, nullptr, nullptr};
-        const int scaleSourceStrides[4] = {static_cast<int>(outWidth) * 4, 0, 0, 0};
-        uint8_t* scaleTarget[4] = {
-            canvas_.data() + (static_cast<size_t>(offsetY) * lockedWidth_ + offsetX) * 4, nullptr, nullptr, nullptr};
-        const int scaleTargetStrides[4] = {static_cast<int>(lockedWidth_) * 4, 0, 0, 0};
-        sws_scale(scale_, scaleSource, scaleSourceStrides, 0, static_cast<int>(outHeight), scaleTarget, scaleTargetStrides);
+        RotateInto(reinterpret_cast<const uint32_t*>(converted_.data()), preWidth, preHeight, rotation_,
+                   canvas32 + static_cast<size_t>(offsetY) * lockedWidth_ + offsetX, lockedWidth_);
 
         return writer_.Write(canvas_.data(), lockedWidth_, lockedHeight_);
     }

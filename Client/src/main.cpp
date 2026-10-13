@@ -52,7 +52,7 @@ namespace
             "  --vid HEX           phone vendor id filter for --aoa\n"
             "  --pid HEX           phone product id filter for --aoa\n"
             "  --offset DEGREES    rotation added to the header rotation (default 270)\n"
-            "  --size WxH          force camera output size\n"
+            "  --size WxH          camera output size, stream is letterboxed into it (default 1920x1080)\n"
             "  --decoder MODE      auto (default), cpu or gpu (D3D11VA, any vendor)\n"
             "  --gpu INDEX         adapter index for GPU decoding (default 0)\n"
             "  --no-vcam           do not create the virtual camera, only fill the frame bridge\n"
@@ -157,6 +157,9 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    wincam::Renderer renderer(writer, options.width, options.height);
+    writer.Announce(renderer.OutputWidth(), renderer.OutputHeight());
+
     wincam::VirtualCamera camera;
     if (options.virtualCamera)
     {
@@ -176,7 +179,6 @@ int main(int argc, char** argv)
         ? wincam::MakeAoaTransport(options.vendor, options.product)
         : wincam::MakeTcpTransport(options.host, options.port);
 
-    wincam::Renderer renderer(writer, options.width, options.height);
     wincam::Decoder decoder;
     int headerRotation = 0;
     int extraRotation = 0;
