@@ -654,6 +654,26 @@ private fun StartButton(streaming: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
+private fun RotatePrompt(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(18.dp)
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(ColorAccent)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "Rotate camera?",
+            color = Color.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
 fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modifier) {
     var savedResolution by rememberSaveable { mutableStateOf<String?>(null) }
     var savedFps by rememberSaveable { mutableStateOf<String?>(null) }
@@ -987,6 +1007,14 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
                 StreamMessage(streamError)
                 StartButton(streaming, toggleServer)
             }
+        }
+        if (streaming && viewModel.rotationPrompt) {
+            RotatePrompt(
+                onClick = viewModel::applyRotation,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 72.dp, end = 16.dp)
+            )
         }
     }
 }

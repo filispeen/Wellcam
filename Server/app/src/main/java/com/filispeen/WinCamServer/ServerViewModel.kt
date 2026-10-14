@@ -69,15 +69,36 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     private var server: VideoTransport = tcpTransport
     private val streamer = VideoStreamer().also { it.attach(tcpTransport) }
 
+    private var pendingQuarter = 0
+    private var appliedQuarter = 0
+    private var orientationReady = false
+
+    var rotationPrompt by mutableStateOf(false)
+        private set
+
     private val orientationListener = object : OrientationEventListener(application) {
         override fun onOrientationChanged(orientation: Int) {
             if (orientation == ORIENTATION_UNKNOWN) return
-            streamer.orientationQuarter = ((orientation + 45) / 90) % 4
+            pendingQuarter = ((orientation + 45) / 90) % 4
+            if (!orientationReady) {
+                orientationReady = true
+                appliedQuarter = pendingQuarter
+                streamer.orientationQuarter = appliedQuarter
+            }
+            rotationPrompt = pendingQuarter != appliedQuarter
         }
     }
 
+    fun applyRotation() {
+        appliedQuarter = pendingQuarter
+        streamer.orientationQuarter = appliedQuarter
+        rotationPrompt = false
+    }
+
     private fun setOrientationTracking(enabled: Boolean) {
+        rotationPrompt = false
         if (enabled) {
+            orientationReady = false
             if (orientationListener.canDetectOrientation()) orientationListener.enable()
         } else {
             orientationListener.disable()
