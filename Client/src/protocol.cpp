@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace wincam
+namespace wellcam
 {
     namespace
     {

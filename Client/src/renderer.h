@@ -8,7 +8,7 @@
 struct AVFrame;
 struct SwsContext;
 
-namespace wincam
+namespace wellcam
 {
     class Renderer
     {

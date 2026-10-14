@@ -7,7 +7,7 @@
 #include <cstring>
 #include <thread>
 
-namespace wincam
+namespace wellcam
 {
     namespace
     {
@@ -20,8 +20,8 @@ namespace wincam
 
         const char* const AccessoryStrings[] = {
             "Filispeen",
-            "WinCam",
-            "WinCam Server",
+            "Wellcam",
+            "Wellcam",
             "1",
             "https://example.invalid",
             "0"};

@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 
-namespace wincam
+namespace wellcam
 {
     class Transport
     {

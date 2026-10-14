@@ -38,7 +38,7 @@ namespace
         int offset = 180;
         uint32_t width = 0;
         uint32_t height = 0;
-        wincam::DecoderMode decoder = wincam::DecoderMode::Auto;
+        wellcam::DecoderMode decoder = wellcam::DecoderMode::Auto;
         int gpu = 0;
         bool virtualCamera = true;
     };
@@ -46,7 +46,7 @@ namespace
     void PrintUsage()
     {
         std::printf(
-            "Usage: wincam_client [options]\n"
+            "Usage: wellcam_connect [options]\n"
             "  --tcp host:port     TCP transport (default 127.0.0.1:11203)\n"
             "  --aoa               USB accessory transport\n"
             "  --vid HEX           phone vendor id filter for --aoa\n"
@@ -105,9 +105,9 @@ namespace
             else if (arg == "--decoder" && hasValue)
             {
                 const std::string value = argv[++i];
-                if (value == "auto") options.decoder = wincam::DecoderMode::Auto;
-                else if (value == "cpu") options.decoder = wincam::DecoderMode::Cpu;
-                else if (value == "gpu") options.decoder = wincam::DecoderMode::Gpu;
+                if (value == "auto") options.decoder = wellcam::DecoderMode::Auto;
+                else if (value == "cpu") options.decoder = wellcam::DecoderMode::Cpu;
+                else if (value == "gpu") options.decoder = wellcam::DecoderMode::Gpu;
                 else return false;
             }
             else if (arg == "--gpu" && hasValue)
@@ -157,13 +157,13 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    wincam::Renderer renderer(writer, options.width, options.height);
+    wellcam::Renderer renderer(writer, options.width, options.height);
     writer.Announce(renderer.OutputWidth(), renderer.OutputHeight());
 
-    wincam::VirtualCamera camera;
+    wellcam::VirtualCamera camera;
     if (options.virtualCamera)
     {
-        const long result = camera.Start(L"WinCam");
+        const long result = camera.Start(L"Wellcam Connect");
         if (result < 0)
         {
             std::fprintf(stderr,
@@ -172,14 +172,14 @@ int main(int argc, char** argv)
                          static_cast<unsigned long>(result));
             return 1;
         }
-        std::printf("Virtual camera \"WinCam\" started.\n");
+        std::printf("Virtual camera \"Wellcam Connect\" started.\n");
     }
 
-    std::unique_ptr<wincam::Transport> transport = options.aoa
-        ? wincam::MakeAoaTransport(options.vendor, options.product)
-        : wincam::MakeTcpTransport(options.host, options.port);
+    std::unique_ptr<wellcam::Transport> transport = options.aoa
+        ? wellcam::MakeAoaTransport(options.vendor, options.product)
+        : wellcam::MakeTcpTransport(options.host, options.port);
 
-    wincam::Decoder decoder;
+    wellcam::Decoder decoder;
     int headerRotation = 0;
     int phoneRotation = 0;
     int extraRotation = 0;
@@ -187,17 +187,17 @@ int main(int argc, char** argv)
     bool reportedOutput = false;
     bool gotHeader = false;
 
-    wincam::StreamParser parser(
-        [&](const wincam::StreamHeader& header) {
+    wellcam::StreamParser parser(
+        [&](const wellcam::StreamHeader& header) {
             headerRotation = header.rotation;
             reportedOutput = false;
             gotHeader = true;
             std::printf("Stream: %s %ux%u %u fps rotation %u\n",
-                        header.codec == wincam::Codec::H265 ? "H.265" : "H.264",
+                        header.codec == wellcam::Codec::H265 ? "H.265" : "H.264",
                         header.width, header.height, header.fps, header.rotation);
             if (!decoder.Open(header.codec, options.decoder, options.gpu)) std::printf("Decoder open failed\n");
         },
-        [&](const wincam::Packet& packet) {
+        [&](const wellcam::Packet& packet) {
             phoneRotation = ((2 - packet.orientation) & 3) * 90;
             decoder.Decode(packet.data, packet.size, static_cast<int64_t>(packet.pts),
                            [&](const AVFrame& frame) {
@@ -216,7 +216,7 @@ int main(int argc, char** argv)
                            });
         });
 
-    std::printf("wincam_client: %s transport. Press q to quit.\n", transport->Name());
+    std::printf("wellcam_connect: %s transport. Press q to quit.\n", transport->Name());
 
     std::vector<uint8_t> buffer(65536);
     bool announcedWaiting = false;

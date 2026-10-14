@@ -6,7 +6,7 @@
 #include <mfidl.h>
 #include <mfvirtualcamera.h>
 
-namespace wincam
+namespace wellcam
 {
     namespace
     {

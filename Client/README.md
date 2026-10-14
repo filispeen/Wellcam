@@ -52,7 +52,7 @@ Use the matching 64-bit build and 64-bit `regsvr32` from `C:\Windows\System32`.
 
 ## 3. Start the virtual camera
 
-Run `wincam_client.exe` from an elevated terminal (section 5a). It creates and starts the virtual camera "WinCam" itself with `MFCreateVirtualCamera` and removes it on exit. `VCamSample.exe` is not needed and must not run at the same time. Use `--no-vcam` to only fill the bridge.
+Run `wellcam_connect.exe` from an elevated terminal (section 5a). It creates and starts the virtual camera "Wellcam Connect" itself with `MFCreateVirtualCamera` and removes it on exit. `VCamSample.exe` is not needed and must not run at the same time. Use `--no-vcam` to only fill the bridge.
 
 Test with the Windows Camera app, Discord or OBS.
 
@@ -86,11 +86,11 @@ Run:
 FrameSender.exe "C:\path\to\video.mp4"
 ```
 
-This is a test sender. Run it from an elevated terminal. The source must be at most 3840x2160. For a live phone stream use `wincam_client` below.
+This is a test sender. Run it from an elevated terminal. The source must be at most 3840x2160. For a live phone stream use `wellcam_connect` below.
 
-## 5a. WinCam PC client
+## 5a. Wellcam Connect
 
-`wincam_client.exe` receives the phone stream (Protocol v2) over TCP or USB (AOA), decodes H.264/H.265 with FFmpeg, applies rotation, publishes BGRA frames to the bridge, and creates the virtual camera "WinCam" in the same process (no separate `VCamSample.exe`).
+`wellcam_connect.exe` receives the phone stream (Protocol v2) over TCP or USB (AOA), decodes H.264/H.265 with FFmpeg, applies rotation, publishes BGRA frames to the bridge, and creates the virtual camera "Wellcam Connect" in the same process (no separate `VCamSample.exe`).
 
 Build (once, FFmpeg through vcpkg takes 15 to 30 minutes the first time):
 
@@ -110,9 +110,9 @@ cmake --build --preset release
 Run from an elevated terminal:
 
 ```bat
-build\Release\wincam_client.exe --tcp 127.0.0.1:11203
-build\Release\wincam_client.exe --tcp 192.168.1.50:11203
-build\Release\wincam_client.exe --aoa
+build\Release\wellcam_connect.exe --tcp 127.0.0.1:11203
+build\Release\wellcam_connect.exe --tcp 192.168.1.50:11203
+build\Release\wellcam_connect.exe --aoa
 ```
 
 - ADB mode: run `adb forward tcp:11203 tcp:11203` first.
@@ -125,7 +125,7 @@ build\Release\wincam_client.exe --aoa
 ## 6. Unregister / remove the virtual camera
 
 1. Close apps that are using the camera.
-2. Exit `wincam_client.exe`; it calls `IMFVirtualCamera::Remove()`.
+2. Exit `wellcam_connect.exe`; it calls `IMFVirtualCamera::Remove()`.
 3. In an elevated Command Prompt, unregister the COM DLL:
 
 ```bat

@@ -11,7 +11,7 @@ struct AVPacket;
 struct AVFrame;
 struct AVBufferRef;
 
-namespace wincam
+namespace wellcam
 {
     enum class DecoderMode
     {

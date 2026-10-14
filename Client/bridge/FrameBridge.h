@@ -32,7 +32,7 @@ namespace FrameBridge
     constexpr size_t MappingBytes = sizeof(Header) + MaxFrameBytes;
     constexpr wchar_t MappingName[] = L"Global\\CppVirtualCamera.Frame";
     constexpr wchar_t Sddl[] = L"D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;LS)(A;;GA;;;AU)";
-    constexpr wchar_t TracePath[] = L"C:\\ProgramData\\WinCamBridge.log";
+    constexpr wchar_t TracePath[] = L"C:\\ProgramData\\WellcamBridge.log";
 
     inline bool& TraceEnabled()
     {

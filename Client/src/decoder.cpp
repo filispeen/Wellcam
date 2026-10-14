@@ -12,7 +12,7 @@ extern "C"
 #include <libavutil/pixfmt.h>
 }
 
-namespace wincam
+namespace wellcam
 {
     namespace
     {

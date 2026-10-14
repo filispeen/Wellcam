@@ -11,7 +11,7 @@ extern "C"
 #include <libswscale/swscale.h>
 }
 
-namespace wincam
+namespace wellcam
 {
     namespace
     {

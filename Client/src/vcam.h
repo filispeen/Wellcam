@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace wincam
+namespace wellcam
 {
     class VirtualCamera
     {

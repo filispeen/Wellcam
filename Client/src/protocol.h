@@ -5,7 +5,7 @@
 #include <functional>
 #include <vector>
 
-namespace wincam
+namespace wellcam
 {
     enum class Codec : uint8_t
     {
