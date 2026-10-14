@@ -1,4 +1,4 @@
-package com.filispeen.WinCamServer
+package com.filispeen.Wellcam
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -14,7 +14,7 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 
-private const val ChannelId = "wincam_stream"
+private const val ChannelId = "wellcam_stream"
 private const val NotificationId = 1
 
 class StreamService : Service() {
@@ -25,7 +25,7 @@ class StreamService : Service() {
     override fun onCreate() {
         super.onCreate()
         val power = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WinCamServer:stream").apply {
+        wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Wellcam:stream").apply {
             setReferenceCounted(false)
             acquire()
         }

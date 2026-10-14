@@ -1,4 +1,4 @@
-package com.filispeen.WinCamServer.transport
+package com.filispeen.Wellcam.transport
 
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -21,13 +21,13 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicInteger
 
 const val AoaManufacturer = "Filispeen"
-const val AoaModel = "WinCam"
+const val AoaModel = "Wellcam"
 const val AoaVersion = "1"
 
 private const val AoaWriteTimeoutMs = 3000L
 private const val AoaMaxPendingBytes = 8 * 1024 * 1024
 private const val AoaWriteSlice = 16 * 1024
-private const val ActionPermission = "com.filispeen.WinCamServer.USB_ACCESSORY_PERMISSION"
+private const val ActionPermission = "com.filispeen.Wellcam.USB_ACCESSORY_PERMISSION"
 
 class AoaTransport(
     context: Context,
@@ -251,8 +251,8 @@ class AoaTransport(
         private val output = FileOutputStream(pfd.fileDescriptor)
         private val queue = LinkedBlockingQueue<Chunk>()
         private val pendingCount = AtomicInteger(0)
-        private val writerThread = Thread({ writeLoop() }, "wincam-aoa-write").apply { isDaemon = true }
-        private val readerThread = Thread({ readLoop() }, "wincam-aoa-read").apply { isDaemon = true }
+        private val writerThread = Thread({ writeLoop() }, "wellcam-aoa-write").apply { isDaemon = true }
+        private val readerThread = Thread({ readLoop() }, "wellcam-aoa-read").apply { isDaemon = true }
 
         @Volatile
         private var writeStartedAt = 0L

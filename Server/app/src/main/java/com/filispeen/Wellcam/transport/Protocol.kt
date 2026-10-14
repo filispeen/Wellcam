@@ -1,6 +1,6 @@
-package com.filispeen.WinCamServer.transport
+package com.filispeen.Wellcam.transport
 
-import com.filispeen.WinCamServer.encoder.VideoCodec
+import com.filispeen.Wellcam.encoder.VideoCodec
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 

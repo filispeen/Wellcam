@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "WinCam Server"
+rootProject.name = "Wellcam"
 include(":app")

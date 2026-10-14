@@ -1,4 +1,4 @@
-package com.filispeen.WinCamServer.camera
+package com.filispeen.Wellcam.camera
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -258,7 +258,7 @@ class Camera2Backend(private val context: Context) : CameraBackend {
                 ?.filter { it.upper == config.fps }
                 ?.maxByOrNull { it.lower }
             texture?.setDefaultBufferSize(chosen.width, chosen.height)
-            val newThread = HandlerThread("WinCamCamera2").also { it.start() }
+            val newThread = HandlerThread("WellcamCamera2").also { it.start() }
             val newHandler = Handler(newThread.looper)
             val gen = synchronized(lock) {
                 generation += 1

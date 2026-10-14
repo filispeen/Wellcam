@@ -4,13 +4,13 @@ plugins {
 }
 
 android {
-    namespace = "com.filispeen.WinCamServer"
+    namespace = "com.filispeen.Wellcam"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.filispeen.WinCamServer"
+        applicationId = "com.filispeen.Wellcam"
         minSdk = 26
         targetSdk = 37
         versionCode = 1

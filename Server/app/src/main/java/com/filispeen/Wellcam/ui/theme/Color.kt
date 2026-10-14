@@ -1,4 +1,4 @@
-package com.filispeen.WinCamServer.ui.theme
+package com.filispeen.Wellcam.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

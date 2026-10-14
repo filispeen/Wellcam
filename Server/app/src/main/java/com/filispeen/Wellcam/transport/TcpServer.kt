@@ -1,4 +1,4 @@
-package com.filispeen.WinCamServer.transport
+package com.filispeen.Wellcam.transport
 
 import android.os.Handler
 import android.os.Looper
@@ -35,7 +35,7 @@ class TcpServer(
             if (token != null) return
             token = t
         }
-        Thread({ acceptLoop(t) }, "wincam-accept").apply { isDaemon = true }.start()
+        Thread({ acceptLoop(t) }, "wellcam-accept").apply { isDaemon = true }.start()
     }
 
     override fun stop() {
@@ -166,7 +166,7 @@ class TcpServer(
 
     private class Chunk(val data: ByteArray, val offset: Int, val length: Int)
 
-    private class Writer(private val socket: Socket) : Thread("wincam-write") {
+    private class Writer(private val socket: Socket) : Thread("wellcam-write") {
         private val queue = LinkedBlockingQueue<Chunk>()
         private val pendingBytes = AtomicInteger(0)
 

@@ -1,4 +1,4 @@
-package com.filispeen.WinCamServer.transport
+package com.filispeen.Wellcam.transport
 
 enum class ServerState { Stopped, Listening, Connected, Error }
 

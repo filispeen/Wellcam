@@ -1,4 +1,4 @@
-package com.filispeen.WinCamServer
+package com.filispeen.Wellcam
 
 import android.content.Intent
 import android.graphics.Color
@@ -8,7 +8,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import com.filispeen.WinCamServer.ui.theme.WinCamServerTheme
+import com.filispeen.Wellcam.ui.theme.WellcamTheme
 
 class MainActivity : ComponentActivity() {
     private val viewModel: ServerViewModel by viewModels()
@@ -20,7 +20,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
         )
         setContent {
-            WinCamServerTheme {
+            WellcamTheme {
                 CameraServerLandscape(viewModel)
             }
         }

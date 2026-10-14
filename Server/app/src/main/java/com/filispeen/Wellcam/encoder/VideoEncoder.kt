@@ -1,4 +1,4 @@
-package com.filispeen.WinCamServer.encoder
+package com.filispeen.Wellcam.encoder
 
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
@@ -25,7 +25,7 @@ class VideoEncoder(
     private var thread: Thread? = null
 
     private companion object {
-        const val TAG = "WinCamEncoder"
+        const val TAG = "WellcamEncoder"
     }
 
     fun start(): Surface {
@@ -51,7 +51,7 @@ class VideoEncoder(
                 mediaCodec = created
                 inputSurface = surface
                 running = true
-                thread = Thread({ drain(created) }, "wincam-encoder").also { it.start() }
+                thread = Thread({ drain(created) }, "wellcam-encoder").also { it.start() }
                 return surface
             } catch (e: Exception) {
                 Log.e(TAG, "Encoder attempt failed (extras=$extras, ${codec.mime} ${width}x$height@$fps, ${bitrate.bitrate} bps)", e)

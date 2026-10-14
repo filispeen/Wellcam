@@ -1,4 +1,4 @@
-package com.filispeen.WinCamServer
+package com.filispeen.Wellcam
 
 import android.app.Application
 import android.os.Handler
@@ -14,22 +14,22 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
-import com.filispeen.WinCamServer.camera.CameraBackend
-import com.filispeen.WinCamServer.camera.CameraBackends
-import com.filispeen.WinCamServer.camera.CameraConfig
-import com.filispeen.WinCamServer.camera.CameraOption
-import com.filispeen.WinCamServer.camera.ExposureLimits
-import com.filispeen.WinCamServer.camera.defaultFps
-import com.filispeen.WinCamServer.camera.defaultSize
-import com.filispeen.WinCamServer.camera.groupByAspect
-import com.filispeen.WinCamServer.encoder.BitrateSettings
-import com.filispeen.WinCamServer.encoder.EncoderSupport
-import com.filispeen.WinCamServer.encoder.VideoCodec
-import com.filispeen.WinCamServer.transport.AoaTransport
-import com.filispeen.WinCamServer.transport.ServerState
-import com.filispeen.WinCamServer.transport.TcpServer
-import com.filispeen.WinCamServer.transport.VideoStreamer
-import com.filispeen.WinCamServer.transport.VideoTransport
+import com.filispeen.Wellcam.camera.CameraBackend
+import com.filispeen.Wellcam.camera.CameraBackends
+import com.filispeen.Wellcam.camera.CameraConfig
+import com.filispeen.Wellcam.camera.CameraOption
+import com.filispeen.Wellcam.camera.ExposureLimits
+import com.filispeen.Wellcam.camera.defaultFps
+import com.filispeen.Wellcam.camera.defaultSize
+import com.filispeen.Wellcam.camera.groupByAspect
+import com.filispeen.Wellcam.encoder.BitrateSettings
+import com.filispeen.Wellcam.encoder.EncoderSupport
+import com.filispeen.Wellcam.encoder.VideoCodec
+import com.filispeen.Wellcam.transport.AoaTransport
+import com.filispeen.Wellcam.transport.ServerState
+import com.filispeen.Wellcam.transport.TcpServer
+import com.filispeen.Wellcam.transport.VideoStreamer
+import com.filispeen.Wellcam.transport.VideoTransport
 
 const val ServerPort = 11203
 

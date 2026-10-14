@@ -1,10 +1,10 @@
-package com.filispeen.WinCamServer.transport
+package com.filispeen.Wellcam.transport
 
 import android.os.SystemClock
 import android.view.Surface
-import com.filispeen.WinCamServer.encoder.BitrateSettings
-import com.filispeen.WinCamServer.encoder.VideoCodec
-import com.filispeen.WinCamServer.encoder.VideoEncoder
+import com.filispeen.Wellcam.encoder.BitrateSettings
+import com.filispeen.Wellcam.encoder.VideoCodec
+import com.filispeen.Wellcam.encoder.VideoEncoder
 
 private const val BacklogLimit = 2 * 1024 * 1024
 private const val SyncRetryMs = 500L

@@ -1,4 +1,4 @@
-package com.filispeen.WinCamServer.transport
+package com.filispeen.Wellcam.transport
 
 import java.net.Inet4Address
 import java.net.NetworkInterface

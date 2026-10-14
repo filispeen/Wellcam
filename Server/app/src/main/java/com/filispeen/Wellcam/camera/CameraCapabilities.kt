@@ -1,4 +1,4 @@
-package com.filispeen.WinCamServer.camera
+package com.filispeen.Wellcam.camera
 
 import android.util.Size
 import java.util.Locale

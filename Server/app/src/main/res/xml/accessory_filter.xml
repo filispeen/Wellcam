@@ -2,6 +2,6 @@
 <resources>
     <usb-accessory
         manufacturer="Filispeen"
-        model="WinCam"
+        model="Wellcam"
         version="1" />
 </resources>

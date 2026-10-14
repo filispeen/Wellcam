@@ -1,4 +1,4 @@
-package com.filispeen.WinCamServer
+package com.filispeen.Wellcam
 
 import org.junit.Test
 

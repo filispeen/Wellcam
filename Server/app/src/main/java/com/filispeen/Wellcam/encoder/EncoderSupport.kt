@@ -1,4 +1,4 @@
-package com.filispeen.WinCamServer.encoder
+package com.filispeen.Wellcam.encoder
 
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList

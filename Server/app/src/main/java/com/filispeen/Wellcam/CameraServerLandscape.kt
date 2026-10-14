@@ -1,4 +1,4 @@
-package com.filispeen.WinCamServer
+package com.filispeen.Wellcam
 
 import android.Manifest
 import android.app.Application
@@ -43,8 +43,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.text.input.KeyboardType
-import com.filispeen.WinCamServer.encoder.EncoderSupport
-import com.filispeen.WinCamServer.camera.ExposureLimits
+import com.filispeen.Wellcam.encoder.EncoderSupport
+import com.filispeen.Wellcam.camera.ExposureLimits
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -79,11 +79,11 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.filispeen.WinCamServer.camera.CameraBackend
-import com.filispeen.WinCamServer.camera.CameraConfig
-import com.filispeen.WinCamServer.camera.CameraPreview
-import com.filispeen.WinCamServer.transport.LocalAddresses
-import com.filispeen.WinCamServer.transport.ServerState
+import com.filispeen.Wellcam.camera.CameraBackend
+import com.filispeen.Wellcam.camera.CameraConfig
+import com.filispeen.Wellcam.camera.CameraPreview
+import com.filispeen.Wellcam.transport.LocalAddresses
+import com.filispeen.Wellcam.transport.ServerState
 import kotlinx.coroutines.delay
 
 private val ColorBg = Color(0xFF0E0E12)
@@ -446,7 +446,7 @@ private fun Header(tab: Int, onTab: (Int) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
-            text = "WCam",
+            text = "Wellcam",
             color = Color.White,
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
