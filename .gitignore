@@ -2,3 +2,4 @@
 Client/upstream/
 Client/build/
 Client/vcpkg_installed/
+.*/
