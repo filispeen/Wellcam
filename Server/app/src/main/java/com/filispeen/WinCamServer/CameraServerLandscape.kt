@@ -80,11 +80,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.filispeen.WinCamServer.camera.CameraBackend
-import com.filispeen.WinCamServer.camera.CameraBackends
 import com.filispeen.WinCamServer.camera.CameraConfig
-import com.filispeen.WinCamServer.camera.defaultFps
-import com.filispeen.WinCamServer.camera.defaultSize
-import com.filispeen.WinCamServer.camera.groupByAspect
 import com.filispeen.WinCamServer.camera.CameraPreview
 import com.filispeen.WinCamServer.transport.LocalAddresses
 import com.filispeen.WinCamServer.transport.ServerState
@@ -111,8 +107,6 @@ private enum class UiStatus(val label: String, val dot: Color) {
 private const val TabGeneral = 0
 private const val TabCamera = 1
 
-private val FallbackSizes = listOf(Size(1280, 720), Size(1920, 1080), Size(2560, 1440))
-private val FallbackFps = listOf(24, 30, 60)
 private const val AdbConnection = "USB (ADB)"
 private const val WifiConnection = "Wi-Fi"
 private const val AoaConnection = "USB (AOA)"
@@ -916,8 +910,6 @@ private fun RotatePrompt(onClick: () -> Unit, modifier: Modifier = Modifier) {
 
 @Composable
 fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modifier) {
-    var savedResolution by rememberSaveable { mutableStateOf<String?>(null) }
-    var savedFps by rememberSaveable { mutableStateOf<String?>(null) }
     var connection by rememberSaveable { mutableStateOf(AdbConnection) }
     val serverState = viewModel.serverState
     val serverInfo = viewModel.serverInfo
@@ -1002,75 +994,28 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
         if (viewModel.isServerRunning()) failStream("Camera: $message")
     }
 
-    val backend = remember(viewModel, inspection) {
-        if (inspection) null else viewModel.cameraBackend
-    }
-    val cameraOptions = remember(backend) { backend?.cameras().orEmpty() }
-    val cameraLabels = remember(cameraOptions) { cameraOptions.map { it.label } }
-    var savedCameraId by rememberSaveable { mutableStateOf<String?>(null) }
-    val activeCamera = cameraOptions.firstOrNull { it.id == savedCameraId }
-        ?: cameraOptions.firstOrNull()
+    viewModel.inspection = inspection
+    val backend = viewModel.backend
+    val cameraOptions = viewModel.cameraOptions
+    val cameraLabels = viewModel.cameraLabels
     var zoom by viewModel::zoom
     var maxZoom by viewModel::maxZoom
-    val onCamera: (String) -> Unit = { label ->
-        cameraOptions.firstOrNull { it.label == label }?.let {
-            savedCameraId = it.id
-            zoom = 1f
-        }
-    }
-    val cameraLabel = activeCamera?.label ?: "No camera"
-    val exposureLimits = remember(backend, activeCamera?.id) { backend?.exposureLimits(activeCamera?.id) }
-    val codecs = remember { EncoderSupport.supportedCodecs() }
-    var savedCodec by rememberSaveable { mutableStateOf<String?>(null) }
-    val codec = codecs.firstOrNull { it.label == savedCodec } ?: codecs.firstOrNull()
-    val allSizes = remember(backend, activeCamera?.id, codec) {
-        val all = backend?.sizes(activeCamera?.id).orEmpty().ifEmpty { FallbackSizes }
-        codec
-            ?.let { c -> all.filter { EncoderSupport.supportsSize(c, it.width, it.height) }.ifEmpty { all } }
-            ?: all
-    }
-    val resolutionGroups = remember(allSizes) {
-        groupByAspect(allSizes).map { group ->
-            group.ratio to group.sizes.map { "${it.width}x${it.height}" }
-        }
-    }
-    val resolution = savedResolution?.takeIf { saved -> resolutionGroups.any { saved in it.second } }
-        ?: defaultSize(allSizes)?.let { "${it.width}x${it.height}" }
-        ?: "1280x720"
-    val selectedSize = allSizes.firstOrNull { "${it.width}x${it.height}" == resolution }
-    val fpsValues = remember(backend, activeCamera?.id, resolution) {
-        backend?.fpsOptions(activeCamera?.id, selectedSize).orEmpty().ifEmpty { FallbackFps }
-    }
-    val fpsLabels = remember(fpsValues) { fpsValues.map { "$it FPS" } }
-    val fps = savedFps?.takeIf { it in fpsLabels }
-        ?: defaultFps(fpsValues)?.let { "$it FPS" }
-        ?: "30 FPS"
-    val previewConfig = CameraConfig(
-        selectedSize?.width ?: 1280,
-        selectedSize?.height ?: 720,
-        activeCamera?.id,
-        fps.removeSuffix(" FPS").toIntOrNull() ?: 30
-    )
-    var autoBitrate by rememberSaveable { mutableStateOf(true) }
-    var manualBitrate by rememberSaveable { mutableStateOf("") }
-    var manualMax by rememberSaveable { mutableStateOf("") }
-    var manualMin by rememberSaveable { mutableStateOf("") }
+    val onCamera: (String) -> Unit = viewModel::selectCamera
+    val cameraLabel = viewModel.cameraLabel
+    val exposureLimits = viewModel.exposureLimits
+    val codecs = viewModel.codecs
+    val codec = viewModel.codec
+    val resolutionGroups = viewModel.resolutionGroups
+    val resolution = viewModel.resolution
+    val fpsLabels = viewModel.fpsLabels
+    val fps = viewModel.fps
+    val previewConfig = viewModel.previewConfig
     var showAdvanced by rememberSaveable { mutableStateOf(false) }
-    val autoSettings = remember(codec, previewConfig) {
-        codec?.let {
-            EncoderSupport.autoBitrate(it, previewConfig.width, previewConfig.height, previewConfig.fps)
-        }
-    }
-    var constantBitrate by rememberSaveable { mutableStateOf(true) }
-    val manualSettings = remember(manualBitrate, manualMin, manualMax) {
-        EncoderSupport.manualSettings(manualBitrate, manualMin, manualMax)
-    }
-    val settings = if (autoBitrate) autoSettings else manualSettings
-    val bitrateError = when {
-        autoBitrate || codec == null -> null
-        manualSettings == null -> "Enter valid numbers in Mbps"
-        else -> EncoderSupport.validate(codec, manualSettings)
-    }
+    val autoBitrate = viewModel.autoBitrate
+    val autoSettings = viewModel.autoSettings
+    val constantBitrate = viewModel.constantBitrate
+    val settings = viewModel.settings
+    val bitrateError = viewModel.bitrateError
     val toggleServer: () -> Unit = {
         val problem = when {
             streaming -> null
@@ -1093,9 +1038,7 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
             viewModel.startServer()
         }
     }
-    val rotation = remember(backend, activeCamera?.id) {
-        if (backend == null) 0 else CameraBackends.sensorOrientation(context, activeCamera?.id)
-    }
+    val rotation = viewModel.sensorRotation
     val encoderSpec = if (streaming && codec != null && settings != null && backend?.api == "Camera2") {
         EncoderSpec(
             codec,
@@ -1113,31 +1056,24 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
     val cameraConfig = previewConfig.copy(encoderSurface = encoderSurface)
     val modeLabel = if (constantBitrate) "CBR" else "VBR"
     val advancedSummary = (codec?.label ?: "No encoder") + ", " + modeLabel + ", " +
-        if (autoBitrate) "auto" else if (bitrateError != null) "invalid bitrate" else "$manualBitrate Mbps"
+        (if (autoBitrate) "auto" else if (bitrateError != null) "invalid bitrate" else "${viewModel.manualBitrate} Mbps")
     if (showAdvanced) {
         AdvancedDialog(
             enabled = !streaming,
             codecs = codecs.map { it.label },
             codec = codec?.label ?: "No encoder",
-            onCodec = { savedCodec = it },
+            onCodec = viewModel::selectCodec,
             constant = constantBitrate,
-            onConstant = { constantBitrate = it },
+            onConstant = viewModel::changeConstantBitrate,
             error = bitrateError,
             auto = autoBitrate,
-            onAuto = { on ->
-                if (!on && autoSettings != null) {
-                    manualBitrate = EncoderSupport.formatMbps(autoSettings.bitrate)
-                    manualMax = EncoderSupport.formatMbps(autoSettings.max)
-                    manualMin = EncoderSupport.formatMbps(autoSettings.min)
-                }
-                autoBitrate = on
-            },
-            bitrate = if (autoBitrate) autoSettings?.let { EncoderSupport.formatMbps(it.bitrate) }.orEmpty() else manualBitrate,
-            onBitrate = { manualBitrate = it },
-            maxBitrate = if (autoBitrate) autoSettings?.let { EncoderSupport.formatMbps(it.max) }.orEmpty() else manualMax,
-            onMaxBitrate = { manualMax = it },
-            minBitrate = if (autoBitrate) autoSettings?.let { EncoderSupport.formatMbps(it.min) }.orEmpty() else manualMin,
-            onMinBitrate = { manualMin = it },
+            onAuto = viewModel::changeAutoBitrate,
+            bitrate = if (autoBitrate) autoSettings?.let { EncoderSupport.formatMbps(it.bitrate) }.orEmpty() else viewModel.manualBitrate,
+            onBitrate = viewModel::changeManualBitrate,
+            maxBitrate = if (autoBitrate) autoSettings?.let { EncoderSupport.formatMbps(it.max) }.orEmpty() else viewModel.manualMax,
+            onMaxBitrate = viewModel::changeManualMax,
+            minBitrate = if (autoBitrate) autoSettings?.let { EncoderSupport.formatMbps(it.min) }.orEmpty() else viewModel.manualMin,
+            onMinBitrate = viewModel::changeManualMin,
             onDismiss = { showAdvanced = false }
         )
     }
@@ -1149,9 +1085,9 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
                 cameraOptions = cameraLabels,
                 onCamera = onCamera,
                 resolution = resolution,
-                onResolution = { savedResolution = it },
+                onResolution = viewModel::selectResolution,
                 fps = fps,
-                onFps = { savedFps = it },
+                onFps = viewModel::selectFps,
                 resolutionGroups = resolutionGroups,
                 fpsOptions = fpsLabels,
                 connection = connection,
