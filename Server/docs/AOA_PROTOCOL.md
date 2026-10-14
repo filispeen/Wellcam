@@ -47,7 +47,7 @@ Hello можна надіслати повторно в будь-який мом
 Далі безперервно пакети:
 
 - тип u8 (0 config, 1 frame)
-- flags u8 (bit0 keyframe)
+- flags u8 (bit0 keyframe, bits 1-2 phone orientation in clockwise quarters of 90 degrees from portrait: 0 portrait, 1 rotated right, 2 upside down, 3 rotated left; other bits reserved, receivers that do not know the orientation bits ignore them)
 - pts u64 (мкс)
 - size u32
 - payload `size` байт
