@@ -661,15 +661,52 @@ private fun RotatePrompt(onClick: () -> Unit, modifier: Modifier = Modifier) {
             .clip(shape)
             .background(ColorAccent)
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = "Rotate camera?",
-            color = Color.White,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Canvas(modifier = Modifier.size(30.dp)) {
+            val s = size.minDimension
+            val line = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = s * 0.08f,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round
+            )
+            val center = Offset(s * 0.5f, s * 0.5f)
+            withTransform({ rotate(-35f, center) }) {
+                drawRoundRect(
+                    color = Color.White,
+                    topLeft = Offset(center.x - s * 0.15f, center.y - s * 0.26f),
+                    size = androidx.compose.ui.geometry.Size(s * 0.30f, s * 0.52f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(s * 0.06f),
+                    style = line
+                )
+            }
+            val radius = s * 0.44f
+            val sweepStart = -75f
+            val sweepEnd = 15f
+            drawArc(
+                color = Color.White,
+                startAngle = sweepStart,
+                sweepAngle = sweepEnd - sweepStart,
+                useCenter = false,
+                topLeft = Offset(center.x - radius, center.y - radius),
+                size = androidx.compose.ui.geometry.Size(radius * 2f, radius * 2f),
+                style = line
+            )
+            val angle = Math.toRadians(sweepEnd.toDouble())
+            val radialX = Math.cos(angle).toFloat()
+            val radialY = Math.sin(angle).toFloat()
+            val tangentX = -radialY
+            val tangentY = radialX
+            val endX = center.x + radius * radialX
+            val endY = center.y + radius * radialY
+            val head = Path().apply {
+                moveTo(endX + tangentX * s * 0.14f, endY + tangentY * s * 0.14f)
+                lineTo(endX + radialX * s * 0.10f, endY + radialY * s * 0.10f)
+                lineTo(endX - radialX * s * 0.10f, endY - radialY * s * 0.10f)
+                close()
+            }
+            drawPath(head, Color.White)
+        }
     }
 }
 
