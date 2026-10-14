@@ -93,10 +93,22 @@ private val ColorBg = Color(0xFF0E0E12)
 private val ColorSurface = Color(0xFF1C1C22)
 private val ColorBorder = Color(0xFF2A2A33)
 private val ColorMuted = Color(0xFF8E8E99)
-private val ColorStatusText = Color(0xFFB4B4BF)
 private val ColorAccent = Color(0xFF1D4ED8)
 private val ColorStop = Color(0xFFB91C1C)
 private val ColorLive = Color(0xFF22C55E)
+private val ColorAmber = Color(0xFFF59E0B)
+private val ColorError = Color(0xFFEF4444)
+
+private enum class UiStatus(val label: String, val dot: Color) {
+    Offline("OFFLINE", ColorMuted),
+    Listening("LISTENING", ColorLive),
+    Live("LIVE", ColorLive),
+    Disconnected("DISCONNECTED", ColorAmber),
+    Error("ERROR", ColorError)
+}
+
+private const val TabGeneral = 0
+private const val TabCamera = 1
 
 private val FallbackSizes = listOf(Size(1280, 720), Size(1920, 1080), Size(2560, 1440))
 private val FallbackFps = listOf(24, 30, 60)
@@ -195,6 +207,7 @@ private fun PreviewPanel(
     error: String?,
     config: CameraConfig,
     zoom: Float,
+    status: UiStatus,
     onMaxZoom: (Float) -> Unit,
     onPlaceholderClick: () -> Unit,
     onError: (String) -> Unit,
@@ -248,6 +261,12 @@ private fun PreviewPanel(
                 )
             }
         }
+        StatusBadge(
+            status = status,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 12.dp, bottom = 12.dp)
+        )
     }
 }
 
@@ -329,6 +348,7 @@ private fun PreviewSection(
     config: CameraConfig,
     zoom: Float,
     maxZoom: Float,
+    status: UiStatus,
     onZoom: (Float) -> Unit,
     onMaxZoom: (Float) -> Unit,
     onPlaceholderClick: () -> Unit,
@@ -351,6 +371,7 @@ private fun PreviewSection(
             error = error,
             config = config,
             zoom = zoom,
+            status = status,
             onMaxZoom = onMaxZoom,
             onPlaceholderClick = onPlaceholderClick,
             onError = onError,
@@ -362,32 +383,68 @@ private fun PreviewSection(
 }
 
 @Composable
-private fun StatusChip(label: String, streaming: Boolean) {
+private fun StatusBadge(status: UiStatus, modifier: Modifier = Modifier) {
     Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(ColorSurface)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xB808080B))
+            .border(1.dp, Color(0x21FFFFFF), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Box(
             Modifier
-                .size(8.dp)
+                .size(7.dp)
                 .clip(CircleShape)
-                .background(if (streaming) ColorLive else ColorMuted)
+                .background(status.dot)
         )
         Text(
-            text = label,
-            color = ColorStatusText,
-            fontSize = 12.sp,
+            text = status.label,
+            color = Color.White,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.8.sp,
             maxLines = 1
         )
     }
 }
 
 @Composable
-private fun Header(label: String, streaming: Boolean) {
+private fun HeaderTabs(tab: Int, onTab: (Int) -> Unit) {
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .background(ColorSurface)
+            .border(1.dp, ColorBorder, shape)
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        listOf("General", "Camera").forEachIndexed { index, name ->
+            val selected = tab == index
+            Box(
+                modifier = Modifier
+                    .clip(shape)
+                    .background(if (selected) ColorAccent else Color.Transparent)
+                    .clickable { onTab(index) }
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = name,
+                    color = if (selected) Color.White else ColorMuted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun Header(tab: Int, onTab: (Int) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -402,7 +459,7 @@ private fun Header(label: String, streaming: Boolean) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
-        StatusChip(label, streaming)
+        HeaderTabs(tab, onTab)
     }
 }
 
@@ -742,16 +799,13 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
         connection == AoaConnection -> "USB cable (accessory mode)"
         else -> localAddress?.let { "$it:$ServerPort" } ?: "No Wi-Fi address"
     }
-    val statusLabel = when (serverState) {
-        ServerState.Stopped -> "Stopped"
-        ServerState.Listening -> when {
-            clientDropped -> "Client disconnected"
-            connection == AoaConnection -> "Waiting for USB host"
-            else -> "Listening"
-        }
-        ServerState.Connected -> "Connected: ${serverInfo.orEmpty()}"
-        ServerState.Error -> "Error"
+    val status = when (serverState) {
+        ServerState.Stopped -> UiStatus.Offline
+        ServerState.Listening -> if (clientDropped) UiStatus.Disconnected else UiStatus.Listening
+        ServerState.Connected -> UiStatus.Live
+        ServerState.Error -> UiStatus.Error
     }
+    var tab by rememberSaveable { mutableStateOf(TabGeneral) }
 
     val context = LocalContext.current
     val inspection = LocalInspectionMode.current
@@ -940,6 +994,28 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
         )
     }
 
+    val tabContent: @Composable () -> Unit = {
+        if (tab == TabGeneral) {
+            Controls(
+                camera = cameraLabel,
+                cameraOptions = cameraLabels,
+                onCamera = onCamera,
+                resolution = resolution,
+                onResolution = { savedResolution = it },
+                fps = fps,
+                onFps = { savedFps = it },
+                resolutionGroups = resolutionGroups,
+                fpsOptions = fpsLabels,
+                connection = connection,
+                onConnection = { connection = it },
+                address = address,
+                advancedSummary = advancedSummary,
+                onAdvanced = { showAdvanced = true },
+                enabled = !streaming
+            )
+        }
+    }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
@@ -963,6 +1039,7 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
                     config = cameraConfig,
                     zoom = zoom,
                     maxZoom = maxZoom,
+                    status = status,
                     onZoom = { zoom = it },
                     onMaxZoom = { maxZoom = it },
                     onPlaceholderClick = onPlaceholderClick,
@@ -975,27 +1052,14 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
                         .fillMaxHeight(),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Header(statusLabel, streaming)
-                    Controls(
-                        camera = cameraLabel,
-                        cameraOptions = cameraLabels,
-                        onCamera = onCamera,
-                        resolution = resolution,
-                        onResolution = { savedResolution = it },
-                        fps = fps,
-                        onFps = { savedFps = it },
-                        resolutionGroups = resolutionGroups,
-                        fpsOptions = fpsLabels,
-                        connection = connection,
-                        onConnection = { connection = it },
-                        address = address,
-                        advancedSummary = advancedSummary,
-                        onAdvanced = { showAdvanced = true },
-                        enabled = !streaming,
+                    Header(tab) { tab = it }
+                    Column(
                         modifier = Modifier
                             .weight(1f)
                             .verticalScroll(rememberScrollState())
-                    )
+                    ) {
+                        tabContent()
+                    }
                     StreamMessage(streamError)
                     StartButton(streaming, toggleServer)
                 }
@@ -1004,11 +1068,10 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Header(statusLabel, streaming)
+                Header(tab) { tab = it }
                 PreviewSection(
                     backend = backend,
                     hasPermission = hasPermission,
@@ -1016,6 +1079,7 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
                     config = cameraConfig,
                     zoom = zoom,
                     maxZoom = maxZoom,
+                    status = status,
                     onZoom = { zoom = it },
                     onMaxZoom = { maxZoom = it },
                     onPlaceholderClick = onPlaceholderClick,
@@ -1024,23 +1088,13 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
                         .fillMaxWidth()
                         .height((screenWidth - 32.dp - ZoomBarWidth - ZoomBarGap) * 9f / 16f)
                 )
-                Controls(
-                    camera = cameraLabel,
-                    cameraOptions = cameraLabels,
-                    onCamera = onCamera,
-                    resolution = resolution,
-                    onResolution = { savedResolution = it },
-                    fps = fps,
-                    onFps = { savedFps = it },
-                    resolutionGroups = resolutionGroups,
-                    fpsOptions = fpsLabels,
-                    connection = connection,
-                    onConnection = { connection = it },
-                    address = address,
-                    advancedSummary = advancedSummary,
-                    onAdvanced = { showAdvanced = true },
-                    enabled = !streaming
-                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    tabContent()
+                }
                 StreamMessage(streamError)
                 StartButton(streaming, toggleServer)
             }
