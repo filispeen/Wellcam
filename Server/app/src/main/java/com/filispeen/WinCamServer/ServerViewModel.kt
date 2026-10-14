@@ -9,6 +9,8 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
+import com.filispeen.WinCamServer.camera.CameraBackend
+import com.filispeen.WinCamServer.camera.CameraBackends
 import com.filispeen.WinCamServer.encoder.BitrateSettings
 import com.filispeen.WinCamServer.encoder.VideoCodec
 import com.filispeen.WinCamServer.transport.AoaTransport
@@ -45,10 +47,15 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var spec: EncoderSpec? = null
 
+    val cameraBackend: CameraBackend by lazy { CameraBackends.create(application) }
+
     private val onState: (ServerState, String?) -> Unit = { state, info ->
         if (state == ServerState.Listening && serverState == ServerState.Connected) clientDropped = true
         if (state != ServerState.Listening) clientDropped = false
         if (state == ServerState.Connected) streamError = null
+        if (state == ServerState.Stopped || state == ServerState.Error) {
+            StreamService.stop(getApplication())
+        }
         serverState = state
         serverInfo = info
     }
@@ -73,11 +80,13 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun startServer() {
+        StreamService.start(getApplication())
         server.start()
     }
 
     fun stopServer() {
         server.stop()
+        StreamService.stop(getApplication())
     }
 
     fun isServerRunning(): Boolean = server.isRunning()
@@ -85,6 +94,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     fun failStream(message: String) {
         streamError = message
         server.stop()
+        StreamService.stop(getApplication())
     }
 
     fun syncEncoder(next: EncoderSpec?) {
@@ -115,5 +125,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     override fun onCleared() {
         streamer.stop()
         server.stop()
+        cameraBackend.stop()
+        StreamService.stop(getApplication())
     }
 }

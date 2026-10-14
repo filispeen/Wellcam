@@ -3,6 +3,7 @@ package com.filispeen.WinCamServer
 import android.Manifest
 import android.app.Application
 import android.content.pm.PackageManager
+import android.os.Build
 import android.content.res.Configuration
 import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -706,11 +707,30 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
         )
     }
     var cameraError by remember { mutableStateOf<String?>(null) }
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+    val requestNotifications: () -> Unit = {
+        if (!inspection && Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted -> hasPermission = granted }
+    ) { granted ->
+        hasPermission = granted
+        if (granted) requestNotifications()
+    }
     LaunchedEffect(Unit) {
-        if (!inspection && !hasPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
+        if (!inspection && !hasPermission) {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        } else {
+            requestNotifications()
+        }
     }
     val onPlaceholderClick: () -> Unit = {
         if (!hasPermission) {
@@ -724,8 +744,8 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
         if (viewModel.isServerRunning()) failStream("Camera: $message")
     }
 
-    val backend = remember(context, inspection) {
-        if (inspection) null else CameraBackends.create(context)
+    val backend = remember(viewModel, inspection) {
+        if (inspection) null else viewModel.cameraBackend
     }
     val cameraOptions = remember(backend) { backend?.cameras().orEmpty() }
     val cameraLabels = remember(cameraOptions) { cameraOptions.map { it.label } }

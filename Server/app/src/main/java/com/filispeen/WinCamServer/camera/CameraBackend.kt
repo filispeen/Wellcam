@@ -26,7 +26,7 @@ interface CameraBackend {
     val api: String
     val info: String
     val maxZoom: Float
-    fun start(view: TextureView, texture: SurfaceTexture, config: CameraConfig, report: (String) -> Unit)
+    fun start(view: TextureView?, texture: SurfaceTexture?, config: CameraConfig, report: (String) -> Unit)
     fun refreshTransform()
     fun onFrame(texture: SurfaceTexture)
     fun setZoom(ratio: Float)

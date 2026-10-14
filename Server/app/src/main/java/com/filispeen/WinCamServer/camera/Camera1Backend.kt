@@ -90,12 +90,13 @@ class Camera1Backend : CameraBackend {
     }
 
     override fun start(
-        view: TextureView,
-        texture: SurfaceTexture,
+        view: TextureView?,
+        texture: SurfaceTexture?,
         config: CameraConfig,
         report: (String) -> Unit
     ) {
         stop()
+        if (view == null || texture == null) return
         val count = android.hardware.Camera.getNumberOfCameras()
         val requested = config.cameraId?.toIntOrNull()
         val id = if (requested != null && requested in 0 until count) requested else pickCameraId()

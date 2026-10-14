@@ -117,12 +117,13 @@ class Camera2Backend(private val context: Context) : CameraBackend {
 
     @SuppressLint("MissingPermission")
     override fun start(
-        view: TextureView,
-        texture: SurfaceTexture,
+        view: TextureView?,
+        texture: SurfaceTexture?,
         config: CameraConfig,
         report: (String) -> Unit
     ) {
         stop()
+        if (texture == null && config.encoderSurface == null) return
         try {
             val requested = config.cameraId
             val id = if (requested != null && manager.cameraIdList.contains(requested)) {
@@ -159,14 +160,14 @@ class Camera2Backend(private val context: Context) : CameraBackend {
             val chosenRange = chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
                 ?.filter { it.upper == config.fps }
                 ?.maxByOrNull { it.lower }
-            texture.setDefaultBufferSize(chosen.width, chosen.height)
+            texture?.setDefaultBufferSize(chosen.width, chosen.height)
             val newThread = HandlerThread("WinCamCamera2").also { it.start() }
             val newHandler = Handler(newThread.looper)
             val gen = synchronized(lock) {
                 generation += 1
                 thread = newThread
                 handler = newHandler
-                surface = Surface(texture)
+                surface = texture?.let { Surface(it) }
                 encoderSurface = config.encoderSurface
                 this.view = view
                 size = chosen
@@ -228,12 +229,12 @@ class Camera2Backend(private val context: Context) : CameraBackend {
         report: (String) -> Unit
     ) {
         val target = synchronized(lock) { if (gen == generation) surface else null }
-        if (target == null) {
+        val extra = synchronized(lock) { if (gen == generation) encoderSurface else null }
+        val targets = listOfNotNull(target, extra)
+        if (targets.isEmpty()) {
             camera.close()
             return
         }
-        val extra = synchronized(lock) { encoderSurface }
-        val targets = listOfNotNull(target, extra)
         try {
             camera.createCaptureSession(
                 targets,

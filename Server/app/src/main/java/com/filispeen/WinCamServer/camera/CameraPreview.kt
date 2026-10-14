@@ -37,12 +37,15 @@ fun CameraPreview(
     modifier: Modifier = Modifier,
     onError: (String) -> Unit
 ) {
+    val keepAlive = config.encoderSurface != null
     val context = LocalContext.current
     val owner = remember(context) { context.findLifecycleOwner() }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val latestOnError by rememberUpdatedState(onError)
     val latestOnMaxZoom by rememberUpdatedState(onMaxZoom)
     val latestZoom by rememberUpdatedState(zoom)
+    val latestConfig by rememberUpdatedState(config)
+    val latestKeepAlive by rememberUpdatedState(keepAlive)
     val view = remember { TextureView(context) }
     var surfaceReady by remember { mutableStateOf(false) }
     var resumed by remember { mutableStateOf(false) }
@@ -64,16 +67,24 @@ fun CameraPreview(
         onDispose { lifecycle?.removeObserver(observer) }
     }
 
-    DisposableEffect(surfaceReady, resumed, config) {
+    DisposableEffect(surfaceReady, resumed, config, keepAlive) {
         val texture = view.surfaceTexture
-        if (surfaceReady && resumed && texture != null) {
-            backend.start(view, texture, config) { message ->
+        val withPreview = surfaceReady && resumed && texture != null
+        val headless = keepAlive && config.encoderSurface != null
+        if (withPreview || headless) {
+            backend.start(
+                if (withPreview) view else null,
+                if (withPreview) texture else null,
+                config
+            ) { message ->
                 mainHandler.post { latestOnError(message) }
             }
             latestOnMaxZoom(backend.maxZoom)
             backend.setZoom(latestZoom)
+        } else {
+            backend.stop()
         }
-        onDispose { backend.stop() }
+        onDispose { if (!keepAlive) backend.stop() }
     }
 
     LaunchedEffect(zoom) {
@@ -104,6 +115,12 @@ fun CameraPreview(
                     override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
                         backend.stop()
                         surfaceReady = false
+                        val current = latestConfig
+                        if (latestKeepAlive && current.encoderSurface != null) {
+                            backend.start(null, null, current) { message ->
+                                mainHandler.post { latestOnError(message) }
+                            }
+                        }
                         return true
                     }
 
