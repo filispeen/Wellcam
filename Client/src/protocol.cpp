@@ -127,6 +127,7 @@ namespace wincam
             Packet packet{};
             packet.type = static_cast<PacketType>(type);
             packet.keyframe = (p[1] & 1) != 0;
+            packet.orientation = static_cast<uint8_t>((p[1] >> 1) & 3);
             packet.pts = Be64(p + 2);
             packet.data = p + PacketHeaderSize;
             packet.size = payload;

@@ -181,6 +181,7 @@ int main(int argc, char** argv)
 
     wincam::Decoder decoder;
     int headerRotation = 0;
+    int phoneRotation = 0;
     int extraRotation = 0;
     uint64_t frames = 0;
     bool reportedOutput = false;
@@ -197,9 +198,10 @@ int main(int argc, char** argv)
             if (!decoder.Open(header.codec, options.decoder, options.gpu)) std::printf("Decoder open failed\n");
         },
         [&](const wincam::Packet& packet) {
+            phoneRotation = packet.orientation * 90;
             decoder.Decode(packet.data, packet.size, static_cast<int64_t>(packet.pts),
                            [&](const AVFrame& frame) {
-                               renderer.SetRotation(headerRotation + options.offset + extraRotation);
+                               renderer.SetRotation(headerRotation + options.offset + phoneRotation + extraRotation);
                                if (renderer.Present(frame))
                                {
                                    ++frames;

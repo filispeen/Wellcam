@@ -32,6 +32,7 @@ namespace wincam
     {
         PacketType type;
         bool keyframe;
+        uint8_t orientation;
         uint64_t pts;
         const uint8_t* data;
         size_t size;
