@@ -1,6 +1,6 @@
 # Протокол AOA для ПК-клієнта
 
-Режим "USB (AOA)" у WinCam Server. Телефон працює як USB-акцесуар (Android Open Accessory), ПК є USB-хостом. Режим розробника, USB debugging і `adb` не потрібні.
+Режим "USB (AOA)" у Wellcam. Телефон працює як USB-акцесуар (Android Open Accessory), ПК є USB-хостом. Режим розробника, USB debugging і `adb` не потрібні.
 
 Телефон тільки передає. Потік байтів на bulk IN endpoint ПК ідентичний потоку TCP (Protocol v2), без додаткової обгортки.
 
@@ -9,8 +9,8 @@
 Рядки, які ПК надсилає телефону, мають збігатися з `app/src/main/res/xml/accessory_filter.xml` і константами в `AoaTransport.kt`. Порівняння чутливе до регістру.
 
 - manufacturer (index 0): `Filispeen`
-- model (index 1): `WinCam`
-- description (index 2): `WinCam Server`
+- model (index 1): `Wellcam`
+- description (index 2): `Wellcam`
 - version (index 3): `1`
 - uri (index 4): будь-який, наприклад `https://example.invalid`
 - serial (index 5): будь-який, наприклад `0`
@@ -72,7 +72,7 @@ libusb на Windows потребує драйвера WinUSB на пристро
 
 ## 6. Поведінка на телефоні
 
-1. У WinCam Server вибери "USB (AOA)" і натисни Start server. Статус: "Waiting for USB host".
+1. У Wellcam вибери "USB (AOA)" і натисни Start server. Статус: "Waiting for USB host".
 2. Запусти ПК-клієнт. Після START телефон перемикається в accessory mode, система показує запит дозволу USB-акцесуара (екран має бути розблокований). Підтверди.
 3. Після hello від ПК статус "Connected: USB host". Заголовок і config надсилаються автоматично.
 4. Якщо кабель вийнятий, статус на телефоні "Client disconnected". Якщо ПК просто закрив пристрій, телефон за 3 секунди переходить у той самий стан (див. п. 5). Нова сесія ПК-клієнта починається з hello і ресинхронізації за `WCAM`.

@@ -1,6 +1,6 @@
 # Підключення по кабелю через ADB
 
-Режим "USB (ADB)" у WinCam Server. Телефон слухає порт 11203, ПК підключається через `adb forward`. Мережа, tethering і драйвери RNDIS/NCM не потрібні.
+Режим "USB (ADB)" у Wellcam. Телефон слухає порт 11203, ПК підключається через `adb forward`. Мережа, tethering і драйвери RNDIS/NCM не потрібні.
 
 ## 1. Режим розробника на телефоні
 
@@ -26,7 +26,7 @@
 
 ## 4. Запуск стріму
 
-1. У WinCam Server обери Connection: USB (ADB), натисни Start server.
+1. У Wellcam обери Connection: USB (ADB), натисни Start server.
 2. На ПК виконай: `adb forward tcp:11203 tcp:11203`
 3. ПК-клієнт підключається до `127.0.0.1:11203`.
 

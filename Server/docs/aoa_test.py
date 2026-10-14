@@ -8,7 +8,7 @@ import usb.util
 
 GOOGLE_VID = 0x18D1
 ACCESSORY_PIDS = (0x2D00, 0x2D01)
-STRINGS = ["Filispeen", "WinCam", "WinCam Server", "1", "https://example.invalid", "0"]
+STRINGS = ["Filispeen", "Wellcam", "Wellcam", "1", "https://example.invalid", "0"]
 HEADER = struct.Struct(">4sBBHHHH")
 PACKET = struct.Struct(">BBQI")
 
