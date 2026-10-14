@@ -119,7 +119,7 @@ build\Release\wincam_client.exe --aoa
 - AOA mode: needs WinUSB (Zadig) as described in `Server\docs\AOA_PROTOCOL.md`. `--vid` and `--pid` (hex) limit which device is probed.
 - `--size WxH` sets the camera output size (default 1920x1080). The stream is rotated, scaled and letterboxed into it.
 - `--decoder auto|cpu|gpu` selects decoding. `auto` (default) uses D3D11VA (AMD, NVIDIA and Intel) and falls back to the CPU when the GPU cannot decode the stream. `--gpu INDEX` picks the adapter.
-- `--offset DEGREES` is added to the rotation from the stream header (default 270). Key `r` adds another 90 at runtime.
+- `--offset DEGREES` is added to the rotation from the stream header (default 180, calibrated for the phone held vertical). Key `r` adds another 90 at runtime.
 - The client reconnects automatically when the stream or cable drops.
 
 ## 6. Unregister / remove the virtual camera

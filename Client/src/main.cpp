@@ -35,7 +35,7 @@ namespace
         std::string port = "11203";
         int vendor = -1;
         int product = -1;
-        int offset = 270;
+        int offset = 180;
         uint32_t width = 0;
         uint32_t height = 0;
         wincam::DecoderMode decoder = wincam::DecoderMode::Auto;
@@ -51,7 +51,7 @@ namespace
             "  --aoa               USB accessory transport\n"
             "  --vid HEX           phone vendor id filter for --aoa\n"
             "  --pid HEX           phone product id filter for --aoa\n"
-            "  --offset DEGREES    rotation added to the header rotation (default 270)\n"
+            "  --offset DEGREES    rotation added to the header rotation (default 180)\n"
             "  --size WxH          camera output size, stream is letterboxed into it (default 1920x1080)\n"
             "  --decoder MODE      auto (default), cpu or gpu (D3D11VA, any vendor)\n"
             "  --gpu INDEX         adapter index for GPU decoding (default 0)\n"
