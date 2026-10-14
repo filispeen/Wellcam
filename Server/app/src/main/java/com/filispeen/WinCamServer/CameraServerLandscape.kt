@@ -804,7 +804,7 @@ private fun CameraTab(limits: ExposureLimits?, fps: Int, viewModel: ServerViewMo
                 title = "Shutter speed",
                 valueLabel = if (viewModel.shutterManual) shutterText(shutter) else "Auto",
                 manual = viewModel.shutterManual,
-                onManual = viewModel::setShutterManual,
+                onManual = viewModel::enableShutterManual,
                 position = logPosition(shutter.toDouble(), minNs, maxNs),
                 onPosition = { viewModel.changeShutter(logValue(it, minNs, maxNs).toLong()) }
             )
@@ -815,7 +815,7 @@ private fun CameraTab(limits: ExposureLimits?, fps: Int, viewModel: ServerViewMo
                 title = "ISO",
                 valueLabel = if (viewModel.isoManual) isoValue.toString() else "Auto",
                 manual = viewModel.isoManual,
-                onManual = viewModel::setIsoManual,
+                onManual = viewModel::enableIsoManual,
                 position = logPosition(isoValue.toDouble(), minIso, maxIso),
                 onPosition = { viewModel.changeIso(Math.round(logValue(it, minIso, maxIso)).toInt()) }
             )

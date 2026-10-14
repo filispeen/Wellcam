@@ -67,13 +67,13 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         )
     }
 
-    fun setShutterManual(on: Boolean) {
+    fun enableShutterManual(on: Boolean) {
         if (on && !shutterManual) cameraBackend.currentExposure()?.let { shutterNs = it.first }
         shutterManual = on
         pushExposure()
     }
 
-    fun setIsoManual(on: Boolean) {
+    fun enableIsoManual(on: Boolean) {
         if (on && !isoManual) cameraBackend.currentExposure()?.let { iso = it.second }
         isoManual = on
         pushExposure()
