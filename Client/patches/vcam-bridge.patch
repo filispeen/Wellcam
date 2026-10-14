@@ -191,10 +191,17 @@ index 3c384d4..5fce5f0 100644
  	// 
  	// KSPROPSETID_Pin, KSPROPSETID_Topology, PROPSETID_VIDCAP_CAMERACONTROL, PROPSETID_VIDCAP_VIDEOPROCAMP
 diff --git a/VCamSampleSource/MediaStream.cpp b/VCamSampleSource/MediaStream.cpp
-index baf739f..b82f185 100644
+index baf739f..09c6e70 100644
 --- a/VCamSampleSource/MediaStream.cpp
 +++ b/VCamSampleSource/MediaStream.cpp
-@@ -6,10 +6,12 @@
+@@ -1,4 +1,6 @@
+ #include "pch.h"
++#include <vector>
++#include <cstring>
+ #include "Undocumented.h"
+ #include "Tools.h"
+ #include "EnumNames.h"
+@@ -6,10 +8,12 @@
  #include "FrameGenerator.h"
  #include "MediaStream.h"
  #include "MediaSource.h"
@@ -207,13 +214,12 @@ index baf739f..b82f185 100644
  	_source = source;
  	_index = index;
  
-@@ -20,11 +22,22 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
+@@ -20,11 +24,22 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
  
  	RETURN_IF_FAILED(MFCreateEventQueue(&_queue));
  
 -	// set 1 here to force RGB32 only
--	auto types = wil::make_unique_cotaskmem_array<wil::com_ptr_nothrow<IMFMediaType>>(2);
-+	auto types = wil::make_unique_cotaskmem_array<wil::com_ptr_nothrow<IMFMediaType>>(1);
+ 	auto types = wil::make_unique_cotaskmem_array<wil::com_ptr_nothrow<IMFMediaType>>(2);
  
 -#define NUM_IMAGE_COLS 1280 // 640
 -#define NUM_IMAGE_ROWS 960 //480
@@ -234,7 +240,7 @@ index baf739f..b82f185 100644
  
  	wil::com_ptr_nothrow<IMFMediaType> rgbType;
  	RETURN_IF_FAILED(MFCreateMediaType(&rgbType));
-@@ -35,7 +48,8 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
+@@ -35,12 +50,12 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
  	rgbType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
  	rgbType->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
  	MFSetAttributeRatio(rgbType.get(), MF_MT_FRAME_RATE, 30, 1);
@@ -243,16 +249,102 @@ index baf739f..b82f185 100644
 +	auto bitrate = (uint32_t)(wideBitrate > UINT32_MAX ? UINT32_MAX : wideBitrate);
  	rgbType->SetUINT32(MF_MT_AVG_BITRATE, bitrate);
  	MFSetAttributeRatio(rgbType.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
- 	types[0] = rgbType.detach();
-@@ -70,6 +84,7 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
+-	types[0] = rgbType.detach();
++	types[1] = rgbType.detach();
  
+-	if (types.size() > 1)
+ 	{
+ 		wil::com_ptr_nothrow<IMFMediaType> nv12Type;
+ 		RETURN_IF_FAILED(MFCreateMediaType(&nv12Type));
+@@ -49,13 +64,13 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
+ 		nv12Type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+ 		nv12Type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
+ 		MFSetAttributeSize(nv12Type.get(), MF_MT_FRAME_SIZE, NUM_IMAGE_COLS, NUM_IMAGE_ROWS);
+-		nv12Type->SetUINT32(MF_MT_DEFAULT_STRIDE, (UINT)(NUM_IMAGE_COLS * 1.5));
++		nv12Type->SetUINT32(MF_MT_DEFAULT_STRIDE, NUM_IMAGE_COLS);
+ 		MFSetAttributeRatio(nv12Type.get(), MF_MT_FRAME_RATE, 30, 1);
+ 		// frame size * pixel bit size * framerate
+ 		bitrate = (uint32_t)(NUM_IMAGE_COLS * 1.5 * NUM_IMAGE_ROWS * 8 * 30);
+ 		nv12Type->SetUINT32(MF_MT_AVG_BITRATE, bitrate);
+ 		MFSetAttributeRatio(nv12Type.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
+-		types[1] = nv12Type.detach();
++		types[0] = nv12Type.detach();
+ 	}
+ 
+ 	RETURN_IF_FAILED_MSG(MFCreateStreamDescriptor(_index, (DWORD)types.size(), types.get(), &_descriptor), "MFCreateStreamDescriptor failed");
+@@ -64,25 +79,81 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
+ 	RETURN_IF_FAILED(_descriptor->GetMediaTypeHandler(&handler));
+ 	TraceMFAttributes(handler.get(), L"MediaTypeHandler");
+ 	RETURN_IF_FAILED(handler->SetCurrentMediaType(types[0]));
++	_format = MFVideoFormat_NV12;
+ 
+ 	return S_OK;
+ }
+ 
++namespace
++{
++	void ConvertBgraToNv12(const uint8_t* bgra, uint32_t width, uint32_t height, uint8_t* destination)
++	{
++		uint8_t* yPlane = destination;
++		uint8_t* uvPlane = destination + static_cast<size_t>(width) * height;
++		const size_t stride = static_cast<size_t>(width) * 4;
++
++		for (uint32_t y = 0; y < height; y += 2)
++		{
++			const uint8_t* row0 = bgra + static_cast<size_t>(y) * stride;
++			const uint8_t* row1 = row0 + stride;
++			uint8_t* y0 = yPlane + static_cast<size_t>(y) * width;
++			uint8_t* y1 = y0 + width;
++			uint8_t* uv = uvPlane + static_cast<size_t>(y / 2) * width;
++
++			for (uint32_t x = 0; x < width; x += 2)
++			{
++				const uint8_t* p00 = row0 + static_cast<size_t>(x) * 4;
++				const uint8_t* p01 = p00 + 4;
++				const uint8_t* p10 = row1 + static_cast<size_t>(x) * 4;
++				const uint8_t* p11 = p10 + 4;
++
++				y0[x] = static_cast<uint8_t>(((47 * p00[2] + 157 * p00[1] + 16 * p00[0] + 128) >> 8) + 16);
++				y0[x + 1] = static_cast<uint8_t>(((47 * p01[2] + 157 * p01[1] + 16 * p01[0] + 128) >> 8) + 16);
++				y1[x] = static_cast<uint8_t>(((47 * p10[2] + 157 * p10[1] + 16 * p10[0] + 128) >> 8) + 16);
++				y1[x + 1] = static_cast<uint8_t>(((47 * p11[2] + 157 * p11[1] + 16 * p11[0] + 128) >> 8) + 16);
++
++				const int r = p00[2] + p01[2] + p10[2] + p11[2];
++				const int g = p00[1] + p01[1] + p10[1] + p11[1];
++				const int b = p00[0] + p01[0] + p10[0] + p11[0];
++				uv[x] = static_cast<uint8_t>(((-26 * r - 87 * g + 112 * b + 512) >> 10) + 128);
++				uv[x + 1] = static_cast<uint8_t>(((112 * r - 102 * g - 10 * b + 512) >> 10) + 128);
++			}
++		}
++	}
++
++	void FillBlackNv12(uint8_t* destination, uint32_t width, uint32_t height)
++	{
++		const size_t luma = static_cast<size_t>(width) * height;
++		std::memset(destination, 16, luma);
++		std::memset(destination + luma, 128, luma / 2);
++	}
++}
++
  HRESULT MediaStream::Start(IMFMediaType* type)
  {
 +	FrameBridge::Trace("stream Start entered, allocator set", _allocator ? 1 : 0);
  	RETURN_HR_IF(MF_E_SHUTDOWN, !_queue || !_allocator);
  
++	wil::com_ptr_nothrow<IMFMediaType> currentType;
++	if (!type && _descriptor)
++	{
++		wil::com_ptr_nothrow<IMFMediaTypeHandler> handler;
++		if (SUCCEEDED(_descriptor->GetMediaTypeHandler(&handler)) && SUCCEEDED(handler->GetCurrentMediaType(&currentType)))
++		{
++			type = currentType.get();
++		}
++	}
++
  	if (type)
-@@ -78,11 +93,9 @@ HRESULT MediaStream::Start(IMFMediaType* type)
+ 	{
+ 		RETURN_IF_FAILED(type->GetGUID(MF_MT_SUBTYPE, &_format));
++		FrameBridge::Trace("stream Start subtype data1", _format.Data1);
  		WINTRACE(L"MediaStream::Start format: %s", GUID_ToStringW(_format).c_str());
  	}
  
@@ -267,7 +359,7 @@ index baf739f..b82f185 100644
  	RETURN_IF_FAILED(_queue->QueueEventParamVar(MEStreamStarted, GUID_NULL, S_OK, nullptr));
  	_state = MF_STREAM_STATE_RUNNING;
  	return S_OK;
-@@ -106,17 +119,14 @@ MFSampleAllocatorUsage MediaStream::GetAllocatorUsage()
+@@ -106,17 +177,14 @@ MFSampleAllocatorUsage MediaStream::GetAllocatorUsage()
  HRESULT MediaStream::SetAllocator(IUnknown* allocator)
  {
  	RETURN_HR_IF_NULL(E_POINTER, allocator);
@@ -287,7 +379,7 @@ index baf739f..b82f185 100644
  	return S_OK;
  }
  
-@@ -193,6 +203,7 @@ STDMETHODIMP MediaStream::GetMediaSource(IMFMediaSource** ppMediaSource)
+@@ -193,6 +261,7 @@ STDMETHODIMP MediaStream::GetMediaSource(IMFMediaSource** ppMediaSource)
  STDMETHODIMP MediaStream::GetStreamDescriptor(IMFStreamDescriptor** ppStreamDescriptor)
  {
  	WINTRACE(L"MediaStream::GetStreamDescriptor");
@@ -295,7 +387,7 @@ index baf739f..b82f185 100644
  	RETURN_HR_IF_NULL(E_POINTER, ppStreamDescriptor);
  	*ppStreamDescriptor = nullptr;
  	winrt::slim_lock_guard lock(_lock);
-@@ -206,16 +217,65 @@ STDMETHODIMP MediaStream::RequestSample(IUnknown* pToken)
+@@ -206,16 +275,81 @@ STDMETHODIMP MediaStream::RequestSample(IUnknown* pToken)
  {
  	//WINTRACE(L"MediaStream::RequestSample pToken:%p", pToken);
  	winrt::slim_lock_guard lock(_lock);
@@ -335,7 +427,8 @@ index baf739f..b82f185 100644
 +	DWORD maxLength = 0;
 +	DWORD currentLength = 0;
 +	RETURN_IF_FAILED(frameBuffer->Lock(&destination, &maxLength, &currentLength));
-+	const DWORD frameBytes = _width * _height * 4;
++	const bool nv12 = _format == MFVideoFormat_NV12;
++	const DWORD frameBytes = nv12 ? _width * _height / 2 * 3 : _width * _height * 4;
 +	if (maxLength < frameBytes)
 +	{
 +		frameBuffer->Unlock();
@@ -343,7 +436,17 @@ index baf739f..b82f185 100644
 +	}
 +	uint32_t frameWidth = 0;
 +	uint32_t frameHeight = 0;
-+	const bool gotFrame = FrameBridge::ReadBGRA(destination, maxLength, frameWidth, frameHeight);
++	bool gotFrame = false;
++	if (nv12)
++	{
++		const DWORD bgraBytes = _width * _height * 4;
++		if (_bgra.size() != bgraBytes) _bgra.resize(bgraBytes);
++		gotFrame = FrameBridge::ReadBGRA(_bgra.data(), bgraBytes, frameWidth, frameHeight);
++	}
++	else
++	{
++		gotFrame = FrameBridge::ReadBGRA(destination, maxLength, frameWidth, frameHeight);
++	}
 +	if (!gotFrame || frameWidth != _width || frameHeight != _height)
 +	{
 +		if (gotFrame && _lastFrameState != 2)
@@ -351,12 +454,17 @@ index baf739f..b82f185 100644
 +			_lastFrameState = 2;
 +			FrameBridge::Trace("frame size differs from camera size, frame width", frameWidth);
 +		}
-+		ZeroMemory(destination, frameBytes);
++		if (nv12) FillBlackNv12(destination, _width, _height);
++		else ZeroMemory(destination, frameBytes);
 +	}
-+	else if (_lastFrameState != 1)
++	else
 +	{
-+		_lastFrameState = 1;
-+		FrameBridge::Trace("camera delivering bridge frames, width", frameWidth);
++		if (nv12) ConvertBgraToNv12(_bgra.data(), _width, _height, destination);
++		if (_lastFrameState != 1)
++		{
++			_lastFrameState = 1;
++			FrameBridge::Trace("camera delivering bridge frames, width", frameWidth);
++		}
 +	}
 +	RETURN_IF_FAILED(frameBuffer->SetCurrentLength(frameBytes));
 +	RETURN_IF_FAILED(frameBuffer->Unlock());
@@ -365,7 +473,7 @@ index baf739f..b82f185 100644
  
  	if (pToken)
  	{
-@@ -229,6 +289,7 @@ STDMETHODIMP MediaStream::RequestSample(IUnknown* pToken)
+@@ -229,6 +363,7 @@ STDMETHODIMP MediaStream::RequestSample(IUnknown* pToken)
  STDMETHODIMP MediaStream::SetStreamState(MF_STREAM_STATE value)
  {
  	WINTRACE(L"MediaStream::SetStreamState current:%u value:%u", _state, value);
@@ -373,7 +481,7 @@ index baf739f..b82f185 100644
  	if (_state = value)
  		return S_OK;
  	switch (value)
-@@ -267,6 +328,7 @@ STDMETHODIMP MediaStream::GetStreamState(MF_STREAM_STATE* value)
+@@ -267,6 +402,7 @@ STDMETHODIMP MediaStream::GetStreamState(MF_STREAM_STATE* value)
  STDMETHODIMP_(NTSTATUS) MediaStream::KsProperty(PKSPROPERTY property, ULONG length, LPVOID data, ULONG dataLength, ULONG* bytesReturned)
  {
  	WINTRACE(L"MediaStream::KsProperty len:%u data:%p dataLength:%u", length, data, dataLength);
@@ -382,16 +490,17 @@ index baf739f..b82f185 100644
  	RETURN_HR_IF_NULL(E_POINTER, bytesReturned);
  	winrt::slim_lock_guard lock(_lock);
 diff --git a/VCamSampleSource/MediaStream.h b/VCamSampleSource/MediaStream.h
-index 7c2c640..184090a 100644
+index 7c2c640..3b36d1e 100644
 --- a/VCamSampleSource/MediaStream.h
 +++ b/VCamSampleSource/MediaStream.h
-@@ -57,4 +57,9 @@ private:
+@@ -57,4 +57,10 @@ private:
  	wil::com_ptr_nothrow<IMFMediaSource> _source;
  	wil::com_ptr_nothrow<IMFVideoSampleAllocatorEx> _allocator;
  	int _index;
 +	UINT32 _width = 1280;
 +	UINT32 _height = 720;
 +	int _lastFrameState = 0;
++	std::vector<uint8_t> _bgra;
 +	bool _loggedRequest = false;
 +	bool _loggedEntry = false;
  };

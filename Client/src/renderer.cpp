@@ -101,8 +101,8 @@ namespace wincam
         const double fit = std::min({1.0,
                                      static_cast<double>(FrameBridge::MaxWidth) / width,
                                      static_cast<double>(FrameBridge::MaxHeight) / height});
-        lockedWidth_ = std::max<uint32_t>(2, static_cast<uint32_t>(width * fit));
-        lockedHeight_ = std::max<uint32_t>(2, static_cast<uint32_t>(height * fit));
+        lockedWidth_ = std::max<uint32_t>(2, static_cast<uint32_t>(width * fit) & ~1u);
+        lockedHeight_ = std::max<uint32_t>(2, static_cast<uint32_t>(height * fit) & ~1u);
     }
 
     bool Renderer::Present(const AVFrame& frame)

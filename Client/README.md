@@ -7,7 +7,7 @@ This kit is an integration layer for the public `smourier/VCamSample` Media Foun
 - Your C++ application decodes H.264 or MJPEG to uncompressed BGRA (or uses an existing decoded frame).
 - Create a `FrameBridge::Writer`, call `Open()` once, then `Write(bgra, width, height)` for each frame from that same process.
 - The Media Foundation source DLL is loaded by Windows camera infrastructure in other processes, so the camera source cannot safely consume ordinary in-process pointers. It reads the latest frame through a named shared-memory mapping.
-- The camera advertises RGB32 at 30 fps. Its size is the size announced in the bridge by the client at start (1920x1080 by default, or `--size`), read when the camera is created.
+- The camera advertises NV12 (preferred) and RGB32 at 30 fps. Its size is the size announced in the bridge by the client at start (1920x1080 by default, or `--size`), read when the camera is created. The bridge carries BGRA, the camera converts to NV12 per frame.
 
 **Important:** H.264/MJPEG are encoded formats. A virtual camera generally publishes decoded video frames, not the incoming compressed bitstream directly. This kit's demo sender uses Media Foundation Source Reader to decode a video file or URL to BGRA. For a live H.264/MJPEG stream already handled by your app, integrate the `WriteBGRA` call after your existing decoder.
 
