@@ -20,6 +20,8 @@ class VideoStreamer : ClientListener {
     private var waitingKey = false
     private var lastSyncMs = 0L
 
+    @Volatile
+    var orientationQuarter: Int = 0
     fun attach(next: VideoTransport) {
         synchronized(lock) {
             if (transport === next) return
@@ -117,7 +119,8 @@ class VideoStreamer : ClientListener {
                 }
             } else {
                 waitingKey = false
-                val flags = if (key) Protocol.FLAG_KEYFRAME else 0
+                val orientation = (orientationQuarter and 3) shl 1
+                val flags = (if (key) Protocol.FLAG_KEYFRAME else 0) or orientation
                 val packet = Protocol.packet(Protocol.TYPE_FRAME, flags, ptsUs, bytes, 0, bytes.size)
                 if (!target.send(packet)) ready = false
             }

@@ -3,6 +3,7 @@ package com.filispeen.WinCamServer
 import android.app.Application
 import android.os.Handler
 import android.os.Looper
+import android.view.OrientationEventListener
 import android.view.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -54,6 +55,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         if (state != ServerState.Listening) clientDropped = false
         if (state == ServerState.Connected) streamError = null
         if (state == ServerState.Stopped || state == ServerState.Error) {
+            setOrientationTracking(false)
             StreamService.stop(getApplication())
         }
         serverState = state
@@ -66,6 +68,21 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     }
     private var server: VideoTransport = tcpTransport
     private val streamer = VideoStreamer().also { it.attach(tcpTransport) }
+
+    private val orientationListener = object : OrientationEventListener(application) {
+        override fun onOrientationChanged(orientation: Int) {
+            if (orientation == ORIENTATION_UNKNOWN) return
+            streamer.orientationQuarter = ((orientation + 45) / 90) % 4
+        }
+    }
+
+    private fun setOrientationTracking(enabled: Boolean) {
+        if (enabled) {
+            if (orientationListener.canDetectOrientation()) orientationListener.enable()
+        } else {
+            orientationListener.disable()
+        }
+    }
 
     fun selectAoa(enabled: Boolean) {
         val next: VideoTransport = if (enabled) aoaTransport else tcpTransport
@@ -81,11 +98,13 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun startServer() {
         StreamService.start(getApplication())
+        setOrientationTracking(true)
         server.start()
     }
 
     fun stopServer() {
         server.stop()
+        setOrientationTracking(false)
         StreamService.stop(getApplication())
     }
 
@@ -94,6 +113,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     fun failStream(message: String) {
         streamError = message
         server.stop()
+        setOrientationTracking(false)
         StreamService.stop(getApplication())
     }
 
@@ -126,6 +146,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         streamer.stop()
         server.stop()
         cameraBackend.stop()
+        setOrientationTracking(false)
         StreamService.stop(getApplication())
     }
 }
