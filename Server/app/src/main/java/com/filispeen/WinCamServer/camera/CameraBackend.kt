@@ -22,6 +22,8 @@ data class CameraConfig(
 
 data class CameraOption(val id: String, val label: String)
 
+data class ExposureLimits(val minNs: Long, val maxNs: Long, val minIso: Int, val maxIso: Int)
+
 interface CameraBackend {
     val api: String
     val info: String
@@ -33,6 +35,9 @@ interface CameraBackend {
     fun cameras(): List<CameraOption>
     fun sizes(cameraId: String?): List<Size>
     fun fpsOptions(cameraId: String?, size: Size?): List<Int>
+    fun exposureLimits(cameraId: String?): ExposureLimits? = null
+    fun setExposure(shutterNs: Long?, iso: Int?) {}
+    fun currentExposure(): Pair<Long, Int>? = null
     fun stop()
 }
 

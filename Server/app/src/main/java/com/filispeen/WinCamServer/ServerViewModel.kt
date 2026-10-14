@@ -7,6 +7,8 @@ import android.view.OrientationEventListener
 import android.view.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
@@ -44,11 +46,48 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     var streamError by mutableStateOf<String?>(null)
     var zoom by mutableFloatStateOf(1f)
     var maxZoom by mutableFloatStateOf(1f)
+    var shutterManual by mutableStateOf(false)
+        private set
+    var isoManual by mutableStateOf(false)
+        private set
+    var shutterNs by mutableLongStateOf(16_666_667L)
+        private set
+    var iso by mutableIntStateOf(400)
+        private set
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var spec: EncoderSpec? = null
 
     val cameraBackend: CameraBackend by lazy { CameraBackends.create(application) }
+
+    private fun pushExposure() {
+        cameraBackend.setExposure(
+            if (shutterManual) shutterNs else null,
+            if (isoManual) iso else null
+        )
+    }
+
+    fun setShutterManual(on: Boolean) {
+        if (on && !shutterManual) cameraBackend.currentExposure()?.let { shutterNs = it.first }
+        shutterManual = on
+        pushExposure()
+    }
+
+    fun setIsoManual(on: Boolean) {
+        if (on && !isoManual) cameraBackend.currentExposure()?.let { iso = it.second }
+        isoManual = on
+        pushExposure()
+    }
+
+    fun changeShutter(ns: Long) {
+        shutterNs = ns
+        if (shutterManual) pushExposure()
+    }
+
+    fun changeIso(value: Int) {
+        iso = value
+        if (isoManual) pushExposure()
+    }
 
     private val onState: (ServerState, String?) -> Unit = { state, info ->
         if (state == ServerState.Listening && serverState == ServerState.Connected) clientDropped = true

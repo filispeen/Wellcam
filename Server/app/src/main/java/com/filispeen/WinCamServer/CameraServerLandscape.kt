@@ -44,6 +44,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.text.input.KeyboardType
 import com.filispeen.WinCamServer.encoder.EncoderSupport
+import com.filispeen.WinCamServer.camera.ExposureLimits
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -682,6 +683,152 @@ private fun Controls(
 }
 
 @Composable
+private fun AutoManualToggle(manual: Boolean, onChange: (Boolean) -> Unit) {
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .background(ColorBg)
+            .border(1.dp, ColorBorder, shape)
+            .padding(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        listOf("Auto" to false, "Manual" to true).forEach { (name, value) ->
+            val selected = manual == value
+            Box(
+                modifier = Modifier
+                    .clip(shape)
+                    .background(if (selected) ColorAccent else Color.Transparent)
+                    .clickable { onChange(value) }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = name,
+                    color = if (selected) Color.White else ColorMuted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExposureSection(
+    title: String,
+    valueLabel: String,
+    manual: Boolean,
+    onManual: (Boolean) -> Unit,
+    position: Float,
+    onPosition: (Float) -> Unit
+) {
+    val shape = RoundedCornerShape(18.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(ColorSurface, shape)
+            .border(1.dp, ColorBorder, shape)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(text = title, color = ColorMuted, fontSize = 13.sp)
+                Text(
+                    text = valueLabel,
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+            }
+            AutoManualToggle(manual, onManual)
+        }
+        Slider(
+            value = position.coerceIn(0f, 1f),
+            onValueChange = onPosition,
+            enabled = manual,
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = ColorAccent,
+                inactiveTrackColor = ColorBorder,
+                disabledThumbColor = ColorMuted,
+                disabledActiveTrackColor = ColorBorder,
+                disabledInactiveTrackColor = ColorBorder
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+private fun logPosition(value: Double, min: Double, max: Double): Float {
+    if (max <= min || min <= 0.0) return 0f
+    return (Math.log(value.coerceIn(min, max) / min) / Math.log(max / min)).toFloat()
+}
+
+private fun logValue(position: Float, min: Double, max: Double): Double {
+    if (max <= min || min <= 0.0) return min
+    return min * Math.exp(position.coerceIn(0f, 1f) * Math.log(max / min))
+}
+
+private fun shutterText(ns: Long): String =
+    if (ns >= 1_000_000_000L) {
+        "%.1fs".format(ns / 1e9)
+    } else {
+        "1/" + Math.round(1e9 / ns.coerceAtLeast(1L))
+    }
+
+@Composable
+private fun CameraTab(limits: ExposureLimits?, fps: Int, viewModel: ServerViewModel) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (limits == null) {
+            Text(
+                text = "Manual exposure is not available on this camera",
+                color = ColorMuted,
+                fontSize = 13.sp
+            )
+        } else {
+            val minNs = limits.minNs.toDouble()
+            val maxNs = minOf(limits.maxNs, 1_000_000_000L / fps.coerceAtLeast(1))
+                .toDouble()
+                .coerceAtLeast(minNs + 1.0)
+            val shutter = viewModel.shutterNs.coerceIn(minNs.toLong(), maxNs.toLong())
+            ExposureSection(
+                title = "Shutter speed",
+                valueLabel = if (viewModel.shutterManual) shutterText(shutter) else "Auto",
+                manual = viewModel.shutterManual,
+                onManual = viewModel::setShutterManual,
+                position = logPosition(shutter.toDouble(), minNs, maxNs),
+                onPosition = { viewModel.changeShutter(logValue(it, minNs, maxNs).toLong()) }
+            )
+            val minIso = limits.minIso.toDouble().coerceAtLeast(1.0)
+            val maxIso = limits.maxIso.toDouble().coerceAtLeast(minIso + 1.0)
+            val isoValue = viewModel.iso.coerceIn(limits.minIso, limits.maxIso)
+            ExposureSection(
+                title = "ISO",
+                valueLabel = if (viewModel.isoManual) isoValue.toString() else "Auto",
+                manual = viewModel.isoManual,
+                onManual = viewModel::setIsoManual,
+                position = logPosition(isoValue.toDouble(), minIso, maxIso),
+                onPosition = { viewModel.changeIso(Math.round(logValue(it, minIso, maxIso)).toInt()) }
+            )
+        }
+        Text(
+            text = "Manual values apply to the live stream",
+            color = ColorMuted,
+            fontSize = 13.sp
+        )
+    }
+}
+
+@Composable
 private fun StreamMessage(message: String?) {
     if (message != null) {
         Text(message, color = ColorStop, fontSize = 13.sp, modifier = Modifier.fillMaxWidth())
@@ -872,6 +1019,7 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
         }
     }
     val cameraLabel = activeCamera?.label ?: "No camera"
+    val exposureLimits = remember(backend, activeCamera?.id) { backend?.exposureLimits(activeCamera?.id) }
     val codecs = remember { EncoderSupport.supportedCodecs() }
     var savedCodec by rememberSaveable { mutableStateOf<String?>(null) }
     val codec = codecs.firstOrNull { it.label == savedCodec } ?: codecs.firstOrNull()
@@ -1013,6 +1161,8 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
                 onAdvanced = { showAdvanced = true },
                 enabled = !streaming
             )
+        } else {
+            CameraTab(exposureLimits, previewConfig.fps, viewModel)
         }
     }
 

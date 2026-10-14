@@ -9,12 +9,17 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
+import android.hardware.camera2.TotalCaptureResult
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Size
 import android.view.Surface
 import android.view.TextureView
+
+private const val DefaultShutterNs = 16_666_667L
+private const val DefaultIso = 400
 
 class Camera2Backend(private val context: Context) : CameraBackend {
     override val api = "Camera2"
@@ -44,6 +49,98 @@ class Camera2Backend(private val context: Context) : CameraBackend {
     private var activeArray: Rect? = null
     private var previewBuilder: CaptureRequest.Builder? = null
     private var fpsRange: android.util.Range<Int>? = null
+    private var limits: ExposureLimits? = null
+    private var frameCapNs = Long.MAX_VALUE
+    private var manualShutterNs: Long? = null
+    private var manualIso: Int? = null
+    private var heldShutterNs = DefaultShutterNs
+    private var heldIso = DefaultIso
+
+    @Volatile
+    private var lastShutterNs: Long? = null
+
+    @Volatile
+    private var lastIso: Int? = null
+
+    private val captureCallback = object : CameraCaptureSession.CaptureCallback() {
+        override fun onCaptureCompleted(
+            session: CameraCaptureSession,
+            request: CaptureRequest,
+            result: TotalCaptureResult
+        ) {
+            result.get(CaptureResult.SENSOR_EXPOSURE_TIME)?.let { lastShutterNs = it }
+            result.get(CaptureResult.SENSOR_SENSITIVITY)?.let { lastIso = it }
+        }
+    }
+
+    private fun readLimits(chars: CameraCharacteristics): ExposureLimits? {
+        val time = chars.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE) ?: return null
+        val iso = chars.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE) ?: return null
+        return ExposureLimits(time.lower, time.upper, iso.lower, iso.upper)
+    }
+
+    override fun exposureLimits(cameraId: String?): ExposureLimits? = try {
+        resolveId(cameraId)?.let { readLimits(manager.getCameraCharacteristics(it)) }
+    } catch (e: Exception) {
+        null
+    }
+
+    private fun applyExposure(builder: CaptureRequest.Builder) {
+        val range = limits
+        val shutter = manualShutterNs
+        val iso = manualIso
+        if (range == null || (shutter == null && iso == null)) {
+            builder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+            return
+        }
+        builder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
+        builder.set(
+            CaptureRequest.SENSOR_EXPOSURE_TIME,
+            (shutter ?: heldShutterNs).coerceIn(range.minNs, minOf(range.maxNs, frameCapNs).coerceAtLeast(range.minNs))
+        )
+        builder.set(
+            CaptureRequest.SENSOR_SENSITIVITY,
+            (iso ?: heldIso).coerceIn(range.minIso, range.maxIso)
+        )
+    }
+
+    override fun setExposure(shutterNs: Long?, iso: Int?) {
+        var request: CaptureRequest? = null
+        var activeSession: CameraCaptureSession? = null
+        var activeHandler: Handler? = null
+        synchronized(lock) {
+            if (manualShutterNs == null && manualIso == null && (shutterNs != null || iso != null)) {
+                heldShutterNs = lastShutterNs ?: DefaultShutterNs
+                heldIso = lastIso ?: DefaultIso
+            }
+            shutterNs?.let { heldShutterNs = it }
+            iso?.let { heldIso = it }
+            manualShutterNs = shutterNs
+            manualIso = iso
+            val builder = previewBuilder
+            if (builder != null) {
+                applyExposure(builder)
+                request = builder.build()
+                activeSession = session
+                activeHandler = handler
+            }
+        }
+        val r = request
+        val s = activeSession
+        if (r != null && s != null) {
+            runCatching { s.setRepeatingRequest(r, captureCallback, activeHandler) }
+        }
+    }
+
+    override fun currentExposure(): Pair<Long, Int>? = synchronized(lock) {
+        if (manualShutterNs != null || manualIso != null) {
+            heldShutterNs to heldIso
+        } else {
+            val ns = lastShutterNs
+            val iso = lastIso
+            if (ns != null && iso != null) ns to iso else null
+        }
+    }
 
     override fun cameras(): List<CameraOption> {
         val entries = try {
@@ -177,6 +274,8 @@ class Camera2Backend(private val context: Context) : CameraBackend {
                 useZoomRatio = ratioMode
                 activeArray = array
                 fpsRange = chosenRange
+                limits = readLimits(chars)
+                frameCapNs = 1_000_000_000L / config.fps.coerceAtLeast(1)
                 maxZoom = zoomLimit.coerceAtLeast(1f)
                 afMode = when {
                     CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO in modes ->
@@ -264,10 +363,11 @@ class Camera2Backend(private val context: Context) : CameraBackend {
                                 afMode?.let { builder.set(CaptureRequest.CONTROL_AF_MODE, it) }
                                 fpsRange?.let { builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it) }
                                 applyZoom(builder)
+                                applyExposure(builder)
                                 previewBuilder = builder
                                 builder.build()
                             }
-                            configured.setRepeatingRequest(request, null, sessionHandler)
+                            configured.setRepeatingRequest(request, captureCallback, sessionHandler)
                         } catch (e: Exception) {
                             if (gen == generation) report("Camera2 preview failed: ${e.message}")
                         }
@@ -320,7 +420,7 @@ class Camera2Backend(private val context: Context) : CameraBackend {
         val s = activeSession
         if (r != null && s != null) {
             val h = activeHandler
-            runCatching { s.setRepeatingRequest(r, null, h) }
+            runCatching { s.setRepeatingRequest(r, captureCallback, h) }
         }
     }
 
