@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <thread>
+#include <vector>
 
 namespace wellcam
 {
@@ -93,6 +94,24 @@ namespace wellcam
                 const int rc = libusb_bulk_transfer(handle_, endpointIn_, buffer, size, &transferred, ReadTimeoutMs);
                 if (rc == 0 || rc == LIBUSB_ERROR_TIMEOUT) return transferred > 0 ? transferred : 0;
                 return -1;
+            }
+
+            bool Write(const uint8_t* data, int size) override
+            {
+                if (!handle_ || size <= 0) return false;
+
+                std::vector<uint8_t> copy(data, data + size);
+                int offset = 0;
+                while (offset < size)
+                {
+                    int written = 0;
+                    const int rc = libusb_bulk_transfer(handle_, endpointOut_, copy.data() + offset, size - offset,
+                                                        &written, WriteTimeoutMs);
+                    if (rc != 0 && !(rc == LIBUSB_ERROR_TIMEOUT && written > 0)) return false;
+                    if (written <= 0) return false;
+                    offset += written;
+                }
+                return true;
             }
 
             void Resync() override

@@ -1,17 +1,20 @@
 #include <windows.h>
-#include <conio.h>
 
 #include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
+#include <iostream>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "FrameBridge.h"
+#include "control.h"
 #include "decoder.h"
 #include "protocol.h"
 #include "renderer.h"
@@ -56,7 +59,7 @@ namespace
             "  --decoder MODE      auto (default), cpu or gpu (D3D11VA, any vendor)\n"
             "  --gpu INDEX         adapter index for GPU decoding (default 0)\n"
             "  --no-vcam           do not create the virtual camera, only fill the frame bridge\n"
-            "Keys: r rotate output by 90 degrees, q quit\n"
+            "Type commands and press Enter: help, state, show, camera, resolution, fps, codec, cbr, bitrate, shutter, iso, r (rotate output by 90 degrees), q (quit)\n"
             "Run from an elevated terminal.\n");
     }
 
@@ -180,6 +183,17 @@ int main(int argc, char** argv)
         : wellcam::MakeTcpTransport(options.host, options.port);
 
     wellcam::Decoder decoder;
+    wellcam::Controller controller;
+    static std::mutex inputMutex;
+    static std::deque<std::string> inputLines;
+    std::thread([] {
+        std::string line;
+        while (std::getline(std::cin, line))
+        {
+            std::lock_guard<std::mutex> lock(inputMutex);
+            inputLines.push_back(line);
+        }
+    }).detach();
     int headerRotation = 0;
     int phoneRotation = 0;
     int extraRotation = 0;
@@ -198,6 +212,12 @@ int main(int argc, char** argv)
             if (!decoder.Open(header.codec, options.decoder, options.gpu)) std::printf("Decoder open failed\n");
         },
         [&](const wellcam::Packet& packet) {
+            if (packet.type == wellcam::PacketType::State)
+            {
+                if (controller.OnState(packet.data, packet.size))
+                    std::printf("Phone settings received. Type show or help.\n");
+                return;
+            }
             phoneRotation = ((2 - packet.orientation) & 3) * 90;
             decoder.Decode(packet.data, packet.size, static_cast<int64_t>(packet.pts),
                            [&](const AVFrame& frame) {
@@ -216,7 +236,7 @@ int main(int argc, char** argv)
                            });
         });
 
-    std::printf("wellcam_connect: %s transport. Press q to quit.\n", transport->Name());
+    std::printf("wellcam_connect: %s transport. Type help for commands, q to quit.\n", transport->Name());
 
     std::vector<uint8_t> buffer(65536);
     bool announcedWaiting = false;
@@ -236,21 +256,49 @@ int main(int argc, char** argv)
 
         announcedWaiting = false;
         parser.Reset();
+        controller.Reset();
         gotHeader = false;
+        {
+            std::lock_guard<std::mutex> lock(inputMutex);
+            inputLines.clear();
+        }
+        {
+            const std::vector<uint8_t> request = controller.StateRequest();
+            if (!transport->Write(request.data(), static_cast<int>(request.size())))
+                std::printf("Cannot send the settings request\n");
+        }
         auto lastData = Clock::now();
         auto lastStats = Clock::now();
         uint64_t statsFrames = frames;
 
         while (g_running)
         {
-            while (_kbhit())
+            for (;;)
             {
-                const int key = _getch();
-                if (key == 'q' || key == 'Q') g_running = false;
-                if (key == 'r' || key == 'R')
+                std::string line;
+                {
+                    std::lock_guard<std::mutex> lock(inputMutex);
+                    if (inputLines.empty()) break;
+                    line = inputLines.front();
+                    inputLines.pop_front();
+                }
+                if (line == "q" || line == "Q" || line == "quit")
+                {
+                    g_running = false;
+                }
+                else if (line == "r" || line == "R")
                 {
                     extraRotation = (extraRotation + 90) % 360;
                     std::printf("Extra rotation: %d\n", extraRotation);
+                }
+                else
+                {
+                    std::vector<uint8_t> out;
+                    std::string message;
+                    controller.Handle(line, out, message);
+                    if (!message.empty()) std::printf("%s\n", message.c_str());
+                    if (!out.empty() && !transport->Write(out.data(), static_cast<int>(out.size())))
+                        std::printf("Send failed\n");
                 }
             }
             if (!g_running) break;

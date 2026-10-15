@@ -5,11 +5,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(FFMPEG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 find_path(LIBUSB_INCLUDE_DIR libusb.h PATH_SUFFIXES libusb-1.0 REQUIRED)
 find_library(LIBUSB_LIBRARY NAMES libusb-1.0 usb-1.0 REQUIRED)
 
 add_executable(wellcam_connect
     src/main.cpp
+    src/control.cpp
     src/protocol.cpp
     src/tcp_transport.cpp
     src/aoa_transport.cpp
@@ -26,6 +28,7 @@ target_include_directories(wellcam_connect PRIVATE
 target_link_directories(wellcam_connect PRIVATE ${FFMPEG_LIBRARY_DIRS})
 
 target_link_libraries(wellcam_connect PRIVATE
+    nlohmann_json::nlohmann_json
     ${FFMPEG_LIBRARIES}
     ${LIBUSB_LIBRARY}
     ws2_32

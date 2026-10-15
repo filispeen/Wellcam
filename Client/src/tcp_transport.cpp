@@ -22,6 +22,7 @@ namespace wellcam
 
         constexpr int ConnectTimeoutMs = 2000;
         constexpr int ReadTimeoutMs = 500;
+        constexpr int WriteTimeoutMs = 1000;
 
         class TcpTransport : public Transport
         {
@@ -106,6 +107,32 @@ namespace wellcam
                 if (received > 0) return received;
                 if (received == 0) return -1;
                 return WSAGetLastError() == WSAEWOULDBLOCK ? 0 : -1;
+            }
+
+            bool Write(const uint8_t* data, int size) override
+            {
+                if (socket_ == INVALID_SOCKET) return false;
+
+                int sent = 0;
+                while (sent < size)
+                {
+                    const int n = send(socket_, reinterpret_cast<const char*>(data + sent), size - sent, 0);
+                    if (n > 0)
+                    {
+                        sent += n;
+                        continue;
+                    }
+                    if (n < 0 && WSAGetLastError() == WSAEWOULDBLOCK)
+                    {
+                        fd_set writable;
+                        FD_ZERO(&writable);
+                        FD_SET(socket_, &writable);
+                        timeval timeout{WriteTimeoutMs / 1000, (WriteTimeoutMs % 1000) * 1000};
+                        if (select(0, nullptr, &writable, nullptr, &timeout) > 0) continue;
+                    }
+                    return false;
+                }
+                return true;
             }
 
             void Close() override

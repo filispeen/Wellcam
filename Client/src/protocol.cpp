@@ -35,6 +35,22 @@ namespace wellcam
         }
     }
 
+    std::vector<uint8_t> BuildCommand(uint8_t type, const std::string& json)
+    {
+        const size_t size = json.size() > 65535 ? 65535 : json.size();
+        std::vector<uint8_t> out;
+        out.reserve(7 + size);
+        out.push_back('W');
+        out.push_back('C');
+        out.push_back('M');
+        out.push_back('D');
+        out.push_back(type);
+        out.push_back(static_cast<uint8_t>(size >> 8));
+        out.push_back(static_cast<uint8_t>(size & 0xFF));
+        out.insert(out.end(), json.begin(), json.begin() + static_cast<std::ptrdiff_t>(size));
+        return out;
+    }
+
     StreamParser::StreamParser(HeaderHandler onHeader, PacketHandler onPacket)
         : onHeader_(std::move(onHeader)), onPacket_(std::move(onPacket))
     {
@@ -110,12 +126,19 @@ namespace wellcam
                 continue;
             }
 
-            if (buffer_.size() - pos_ < PacketHeaderSize) break;
+            const size_t available = buffer_.size() - pos_;
+            if (available >= MagicPrefix && IsHeaderStart(buffer_.data() + pos_))
+            {
+                state_ = State::Sync;
+                continue;
+            }
+
+            if (available < PacketHeaderSize) break;
 
             const uint8_t* p = buffer_.data() + pos_;
             const uint8_t type = p[0];
             const uint32_t payload = Be32(p + 10);
-            if (type > 1 || payload > MaxPayload)
+            if (type > 2 || payload > MaxPayload)
             {
                 state_ = State::Sync;
                 pos_ += 1;

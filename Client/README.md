@@ -119,8 +119,10 @@ build\Release\wellcam_connect.exe --aoa
 - AOA mode: needs WinUSB (Zadig) as described in `Server\docs\AOA_PROTOCOL.md`. `--vid` and `--pid` (hex) limit which device is probed.
 - `--size WxH` sets the camera output size (default 1920x1080). The stream is rotated, scaled and letterboxed into it.
 - `--decoder auto|cpu|gpu` selects decoding. `auto` (default) uses D3D11VA (AMD, NVIDIA and Intel) and falls back to the CPU when the GPU cannot decode the stream. `--gpu INDEX` picks the adapter.
-- `--offset DEGREES` is added to the rotation from the stream header (default 180, calibrated for the phone held vertical). Key `r` adds another 90 at runtime.
+- `--offset DEGREES` is added to the rotation from the stream header (default 180, calibrated for the phone held vertical). Command `r` adds another 90 at runtime.
 - The client reconnects automatically when the stream or cable drops.
+
+Remote control of the phone: type commands in the console and press Enter. On connect the client sends a settings request (this enables the command channel, see `Server\docs\AOA_PROTOCOL.md` section 9). Commands: `help`, `state`, `show`, `camera NAME`, `resolution WxH`, `fps N`, `codec H.264|H.265`, `cbr on|off`, `bitrate auto`, `bitrate MBPS MAX MIN`, `shutter auto|1/120|NS`, `iso auto|N`, `r`, `q`. Shutter and ISO apply live; camera, resolution, fps, codec and bitrate restart the phone camera and encoder, and the client reopens the decoder from the new stream header. Start/Stop and the connection method stay on the phone.
 
 ## 6. Unregister / remove the virtual camera
 

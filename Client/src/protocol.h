@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <vector>
 
 namespace wellcam
@@ -16,7 +17,8 @@ namespace wellcam
     enum class PacketType : uint8_t
     {
         Config = 0,
-        Frame = 1
+        Frame = 1,
+        State = 2
     };
 
     struct StreamHeader
@@ -37,6 +39,11 @@ namespace wellcam
         const uint8_t* data;
         size_t size;
     };
+
+    constexpr uint8_t CommandStateRequest = 1;
+    constexpr uint8_t CommandSet = 2;
+
+    std::vector<uint8_t> BuildCommand(uint8_t type, const std::string& json);
 
     class StreamParser
     {
