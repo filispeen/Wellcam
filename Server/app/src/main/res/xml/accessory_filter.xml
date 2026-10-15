@@ -4,4 +4,8 @@
         manufacturer="Filispeen"
         model="Wellcam"
         version="1" />
+    <usb-accessory
+        manufacturer="Filispeen"
+        model="WinCam"
+        version="1" />
 </resources>

@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 const val AoaManufacturer = "Filispeen"
 const val AoaModel = "Wellcam"
+const val AoaLegacyModel = "WinCam"
 const val AoaVersion = "1"
 
 private const val AoaWriteTimeoutMs = 3000L
@@ -134,7 +135,7 @@ class AoaTransport(
     private fun tryOpen(t: Any) {
         if (synchronized(lock) { session != null }) return
         val accessory = usb.accessoryList?.firstOrNull {
-            it.manufacturer == AoaManufacturer && it.model == AoaModel
+            it.manufacturer == AoaManufacturer && (it.model == AoaModel || it.model == AoaLegacyModel)
         } ?: return
         if (usb.hasPermission(accessory)) {
             open(t, accessory)
