@@ -191,6 +191,14 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         if (backend == null) 0 else CameraBackends.sensorOrientation(getApplication(), activeCamera?.id)
     }
 
+    var connection by mutableStateOf(prefs.getString("connection", "USB (ADB)").orEmpty().ifEmpty { "USB (ADB)" })
+        private set
+
+    fun selectConnection(value: String) {
+        connection = value
+        prefs.edit().putString("connection", value).apply()
+    }
+
     private var stateBatch = 0
 
     private fun persist() {

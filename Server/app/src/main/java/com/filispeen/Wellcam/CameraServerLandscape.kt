@@ -910,7 +910,7 @@ private fun RotatePrompt(onClick: () -> Unit, modifier: Modifier = Modifier) {
 
 @Composable
 fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modifier) {
-    var connection by rememberSaveable { mutableStateOf(AdbConnection) }
+    val connection = viewModel.connection
     val serverState = viewModel.serverState
     val serverInfo = viewModel.serverInfo
     val clientDropped = viewModel.clientDropped
@@ -1090,7 +1090,7 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
                 resolutionGroups = resolutionGroups,
                 fpsOptions = fpsLabels,
                 connection = connection,
-                onConnection = { connection = it },
+                onConnection = viewModel::selectConnection,
                 address = address,
                 advancedSummary = advancedSummary,
                 onAdvanced = { showAdvanced = true },
