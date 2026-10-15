@@ -1,6 +1,7 @@
 package com.filispeen.Wellcam
 
 import android.app.Application
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Size
@@ -52,6 +53,8 @@ data class EncoderSpec(
 )
 
 class ServerViewModel(application: Application) : AndroidViewModel(application) {
+    private val prefs = application.getSharedPreferences("wellcam_settings", Context.MODE_PRIVATE)
+
     var serverState by mutableStateOf(ServerState.Stopped)
         private set
     var serverInfo by mutableStateOf<String?>(null)
@@ -63,13 +66,13 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     var streamError by mutableStateOf<String?>(null)
     var zoom by mutableFloatStateOf(1f)
     var maxZoom by mutableFloatStateOf(1f)
-    var shutterManual by mutableStateOf(false)
+    var shutterManual by mutableStateOf(prefs.getBoolean("shutterManual", false))
         private set
-    var isoManual by mutableStateOf(false)
+    var isoManual by mutableStateOf(prefs.getBoolean("isoManual", false))
         private set
-    var shutterNs by mutableLongStateOf(16_666_667L)
+    var shutterNs by mutableLongStateOf(prefs.getLong("shutterNs", 16_666_667L))
         private set
-    var iso by mutableIntStateOf(400)
+    var iso by mutableIntStateOf(prefs.getInt("iso", 400))
         private set
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -86,23 +89,23 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     val cameraLabels: List<String> by lazy { cameraOptions.map { it.label } }
     val codecs: List<VideoCodec> by lazy { EncoderSupport.supportedCodecs() }
 
-    var savedCameraId by mutableStateOf<String?>(null)
+    var savedCameraId by mutableStateOf(prefs.getString("camera", null))
         private set
-    var savedResolution by mutableStateOf<String?>(null)
+    var savedResolution by mutableStateOf(prefs.getString("resolution", null))
         private set
-    var savedFps by mutableStateOf<String?>(null)
+    var savedFps by mutableStateOf(prefs.getString("fps", null))
         private set
-    var savedCodec by mutableStateOf<String?>(null)
+    var savedCodec by mutableStateOf(prefs.getString("codec", null))
         private set
-    var autoBitrate by mutableStateOf(true)
+    var autoBitrate by mutableStateOf(prefs.getBoolean("autoBitrate", true))
         private set
-    var manualBitrate by mutableStateOf("")
+    var manualBitrate by mutableStateOf(prefs.getString("bitrate", "").orEmpty())
         private set
-    var manualMax by mutableStateOf("")
+    var manualMax by mutableStateOf(prefs.getString("max", "").orEmpty())
         private set
-    var manualMin by mutableStateOf("")
+    var manualMin by mutableStateOf(prefs.getString("min", "").orEmpty())
         private set
-    var constantBitrate by mutableStateOf(true)
+    var constantBitrate by mutableStateOf(prefs.getBoolean("constantBitrate", true))
         private set
 
     val activeCamera: CameraOption?
@@ -190,8 +193,28 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
 
     private var stateBatch = 0
 
+    private fun persist() {
+        prefs.edit()
+            .putString("camera", savedCameraId)
+            .putString("resolution", savedResolution)
+            .putString("fps", savedFps)
+            .putString("codec", savedCodec)
+            .putBoolean("autoBitrate", autoBitrate)
+            .putString("bitrate", manualBitrate)
+            .putString("max", manualMax)
+            .putString("min", manualMin)
+            .putBoolean("constantBitrate", constantBitrate)
+            .putBoolean("shutterManual", shutterManual)
+            .putBoolean("isoManual", isoManual)
+            .putLong("shutterNs", shutterNs)
+            .putInt("iso", iso)
+            .apply()
+    }
+
     private fun pushState() {
-        if (stateBatch > 0 || !streamer.stateRequested) return
+        if (stateBatch > 0) return
+        persist()
+        if (!streamer.stateRequested) return
         streamer.publishState(stateJson())
     }
 
@@ -403,6 +426,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         streamer.commandHandler = { type, payload -> mainHandler.post { handleCommand(type, payload) } }
+        if (shutterManual || isoManual) pushExposure()
     }
 
     private var pendingQuarter = 0
