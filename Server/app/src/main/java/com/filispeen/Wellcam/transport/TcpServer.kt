@@ -99,22 +99,34 @@ class TcpServer(
     private fun handle(t: Any, socket: Socket) {
         socket.tcpNoDelay = true
         val w = Writer(socket)
+        var replaced = false
         synchronized(lock) {
             if (token !== t) {
                 closeQuietly(socket)
                 return
             }
+            replaced = client != null
             releaseClient()
             client = socket
             writer = w
         }
         w.start()
         post(t, ServerState.Connected, socket.inetAddress?.hostAddress)
+        if (replaced) clientListener?.onClientDisconnected()
         clientListener?.onClientConnected()
         try {
             val input = socket.getInputStream()
             val buffer = ByteArray(1024)
-            while (alive(t) && input.read(buffer) >= 0) {
+            val parser = CommandParser(
+                onHello = {},
+                onCommand = { type, payload ->
+                    if (synchronized(lock) { client === socket }) clientListener?.onCommand(type, payload)
+                }
+            )
+            while (alive(t)) {
+                val n = input.read(buffer)
+                if (n < 0) break
+                parser.feed(buffer, n)
             }
         } catch (e: IOException) {
         }

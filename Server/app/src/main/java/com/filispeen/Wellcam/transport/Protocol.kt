@@ -8,6 +8,7 @@ object Protocol {
     const val VERSION = 2
     const val TYPE_CONFIG = 0
     const val TYPE_FRAME = 1
+    const val TYPE_STATE = 2
     const val FLAG_KEYFRAME = 1
     const val HEADER_SIZE = 14
     const val PACKET_HEADER_SIZE = 14

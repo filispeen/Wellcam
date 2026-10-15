@@ -340,10 +340,16 @@ class AoaTransport(
         private fun readLoop() {
             try {
                 val buffer = ByteArray(1024)
+                val parser = CommandParser(
+                    onHello = { onHello(this) },
+                    onCommand = { type, payload ->
+                        if (hosted) clientListener?.onCommand(type, payload)
+                    }
+                )
                 while (!closed) {
                     val n = input.read(buffer)
                     if (n < 0) break
-                    if (n > 0) onHello(this)
+                    if (n > 0) parser.feed(buffer, n)
                 }
             } catch (e: IOException) {
             }

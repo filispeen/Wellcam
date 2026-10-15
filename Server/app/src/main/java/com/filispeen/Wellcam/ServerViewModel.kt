@@ -26,10 +26,15 @@ import com.filispeen.Wellcam.encoder.BitrateSettings
 import com.filispeen.Wellcam.encoder.EncoderSupport
 import com.filispeen.Wellcam.encoder.VideoCodec
 import com.filispeen.Wellcam.transport.AoaTransport
+import com.filispeen.Wellcam.transport.CommandSet
+import com.filispeen.Wellcam.transport.CommandStateRequest
 import com.filispeen.Wellcam.transport.ServerState
 import com.filispeen.Wellcam.transport.TcpServer
 import com.filispeen.Wellcam.transport.VideoStreamer
 import com.filispeen.Wellcam.transport.VideoTransport
+import org.json.JSONArray
+import org.json.JSONException
+import org.json.JSONObject
 
 const val ServerPort = 11203
 
@@ -183,27 +188,139 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         if (backend == null) 0 else CameraBackends.sensorOrientation(getApplication(), activeCamera?.id)
     }
 
+    private var stateBatch = 0
+
+    private fun pushState() {
+        if (stateBatch > 0 || !streamer.stateRequested) return
+        streamer.publishState(stateJson())
+    }
+
+    private fun stateJson(): String {
+        val root = JSONObject()
+        root.put("v", 1)
+        root.put("cameras", JSONArray(cameraLabels))
+        root.put("camera", cameraLabel)
+        root.put(
+            "resolutions",
+            JSONArray(
+                resolutionGroups.map { (ratio, sizes) ->
+                    JSONObject().put("ratio", ratio).put("sizes", JSONArray(sizes))
+                }
+            )
+        )
+        root.put("resolution", resolution)
+        root.put("fpsList", JSONArray(fpsLabels.mapNotNull { it.removeSuffix(" FPS").toIntOrNull() }))
+        root.put("fps", previewConfig.fps)
+        root.put("codecs", JSONArray(codecs.map { it.label }))
+        root.put("codec", codec?.label ?: JSONObject.NULL)
+        root.put("autoBitrate", autoBitrate)
+        root.put("constantBitrate", constantBitrate)
+        val auto = autoSettings
+        if (autoBitrate && auto != null) {
+            root.put("bitrate", EncoderSupport.formatMbps(auto.bitrate))
+            root.put("max", EncoderSupport.formatMbps(auto.max))
+            root.put("min", EncoderSupport.formatMbps(auto.min))
+        } else {
+            root.put("bitrate", manualBitrate)
+            root.put("max", manualMax)
+            root.put("min", manualMin)
+        }
+        root.put("bitrateError", bitrateError ?: JSONObject.NULL)
+        val limits = exposureLimits
+        val shutter = JSONObject().put("manual", shutterManual).put("ns", shutterNs)
+        val isoState = JSONObject().put("manual", isoManual).put("value", iso)
+        if (limits != null) {
+            shutter.put("minNs", limits.minNs).put("maxNs", limits.maxNs)
+            isoState.put("min", limits.minIso).put("max", limits.maxIso)
+        }
+        root.put("shutter", shutter)
+        root.put("iso", isoState)
+        return root.toString()
+    }
+
+    private fun handleCommand(type: Int, payload: String) {
+        if (type == CommandStateRequest) {
+            pushState()
+            return
+        }
+        if (type != CommandSet) return
+        val json = try {
+            JSONObject(payload)
+        } catch (e: JSONException) {
+            return
+        }
+        stateBatch++
+        try {
+            applySet(json)
+        } finally {
+            stateBatch--
+        }
+        pushState()
+    }
+
+    private fun applySet(json: JSONObject) {
+        json.optString("camera").takeIf { it.isNotEmpty() }?.let { selectCamera(it) }
+        json.optString("codec").takeIf { label -> label.isNotEmpty() && codecs.any { it.label == label } }
+            ?.let { selectCodec(it) }
+        json.optString("resolution").takeIf { value -> resolutionGroups.any { value in it.second } }
+            ?.let { selectResolution(it) }
+        if (json.has("fps")) {
+            val label = "${json.optInt("fps")} FPS"
+            if (label in fpsLabels) selectFps(label)
+        }
+        if (json.has("constantBitrate")) changeConstantBitrate(json.optBoolean("constantBitrate"))
+        if (json.has("autoBitrate")) changeAutoBitrate(json.optBoolean("autoBitrate"))
+        if (!autoBitrate && json.has("bitrate") && json.has("max") && json.has("min")) {
+            val bitrate = json.optString("bitrate")
+            val max = json.optString("max")
+            val min = json.optString("min")
+            val candidate = EncoderSupport.manualSettings(bitrate, min, max)
+            val c = codec
+            if (candidate != null && c != null && EncoderSupport.validate(c, candidate) == null) {
+                changeManualBitrate(bitrate)
+                changeManualMax(max)
+                changeManualMin(min)
+            }
+        }
+        if (json.has("shutterManual")) enableShutterManual(json.optBoolean("shutterManual"))
+        if (json.has("isoManual")) enableIsoManual(json.optBoolean("isoManual"))
+        val limits = exposureLimits
+        if (json.has("shutterNs")) {
+            val ns = json.optLong("shutterNs")
+            changeShutter(if (limits != null) ns.coerceIn(limits.minNs, limits.maxNs) else ns)
+        }
+        if (json.has("iso")) {
+            val value = json.optInt("iso")
+            changeIso(if (limits != null) value.coerceIn(limits.minIso, limits.maxIso) else value)
+        }
+    }
+
     fun selectCamera(label: String) {
         cameraOptions.firstOrNull { it.label == label }?.let {
             savedCameraId = it.id
             zoom = 1f
+            pushState()
         }
     }
 
     fun selectResolution(value: String) {
         savedResolution = value
+        pushState()
     }
 
     fun selectFps(value: String) {
         savedFps = value
+        pushState()
     }
 
     fun selectCodec(label: String) {
         savedCodec = label
+        pushState()
     }
 
     fun changeConstantBitrate(on: Boolean) {
         constantBitrate = on
+        pushState()
     }
 
     fun changeAutoBitrate(on: Boolean) {
@@ -214,18 +331,22 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             manualMin = EncoderSupport.formatMbps(auto.min)
         }
         autoBitrate = on
+        pushState()
     }
 
     fun changeManualBitrate(value: String) {
         manualBitrate = value
+        pushState()
     }
 
     fun changeManualMax(value: String) {
         manualMax = value
+        pushState()
     }
 
     fun changeManualMin(value: String) {
         manualMin = value
+        pushState()
     }
 
     private fun pushExposure() {
@@ -239,22 +360,26 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         if (on && !shutterManual) cameraBackend.currentExposure()?.let { shutterNs = it.first }
         shutterManual = on
         pushExposure()
+        pushState()
     }
 
     fun enableIsoManual(on: Boolean) {
         if (on && !isoManual) cameraBackend.currentExposure()?.let { iso = it.second }
         isoManual = on
         pushExposure()
+        pushState()
     }
 
     fun changeShutter(ns: Long) {
         shutterNs = ns
         if (shutterManual) pushExposure()
+        pushState()
     }
 
     fun changeIso(value: Int) {
         iso = value
         if (isoManual) pushExposure()
+        pushState()
     }
 
     private val onState: (ServerState, String?) -> Unit = { state, info ->
@@ -275,6 +400,10 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
     }
     private var server: VideoTransport = tcpTransport
     private val streamer = VideoStreamer().also { it.attach(tcpTransport) }
+
+    init {
+        streamer.commandHandler = { type, payload -> mainHandler.post { handleCommand(type, payload) } }
+    }
 
     private var pendingQuarter = 0
     private var appliedQuarter = 0

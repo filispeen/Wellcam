@@ -19,6 +19,15 @@ class VideoStreamer : ClientListener {
     private var ready = false
     private var waitingKey = false
     private var lastSyncMs = 0L
+    private var optedIn = false
+    private var latestState: ByteArray? = null
+    private var lastState: String? = null
+
+    @Volatile
+    var commandHandler: ((Int, String) -> Unit)? = null
+
+    val stateRequested: Boolean
+        get() = synchronized(lock) { optedIn }
 
     @Volatile
     var orientationQuarter: Int = 0
@@ -30,8 +39,36 @@ class VideoStreamer : ClientListener {
             clientPresent = false
             ready = false
             waitingKey = false
+            resetState()
             next.clientListener = this
         }
+    }
+
+    private fun resetState() {
+        optedIn = false
+        latestState = null
+        lastState = null
+    }
+
+    fun publishState(json: String) {
+        synchronized(lock) {
+            if (!optedIn || json == lastState) return
+            lastState = json
+            val bytes = json.toByteArray(Charsets.UTF_8)
+            val packet = Protocol.packet(Protocol.TYPE_STATE, 0, 0L, bytes, 0, bytes.size)
+            latestState = packet
+            if (clientPresent && ready) transport?.send(packet)
+        }
+    }
+
+    override fun onCommand(type: Int, payload: String) {
+        synchronized(lock) {
+            if (!optedIn) {
+                optedIn = true
+                lastState = null
+            }
+        }
+        commandHandler?.invoke(type, payload)
     }
 
     fun start(
@@ -94,6 +131,7 @@ class VideoStreamer : ClientListener {
         synchronized(lock) {
             clientPresent = false
             ready = false
+            resetState()
         }
     }
 
@@ -135,6 +173,8 @@ class VideoStreamer : ClientListener {
         if (target.send(h) && target.send(c)) {
             ready = true
             waitingKey = true
+            val state = latestState
+            if (optedIn && state != null) target.send(state)
         } else {
             ready = false
         }

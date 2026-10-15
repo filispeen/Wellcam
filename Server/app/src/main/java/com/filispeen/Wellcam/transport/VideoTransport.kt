@@ -5,6 +5,9 @@ enum class ServerState { Stopped, Listening, Connected, Error }
 interface ClientListener {
     fun onClientConnected()
     fun onClientDisconnected()
+
+    fun onCommand(type: Int, payload: String) {
+    }
 }
 
 interface VideoTransport {
