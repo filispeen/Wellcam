@@ -74,7 +74,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var spec: EncoderSpec? = null
-
+    private var surfaceSpec by mutableStateOf<EncoderSpec?>(null)
     val cameraBackend: CameraBackend by lazy { CameraBackends.create(application) }
 
     internal var inspection = false
@@ -474,14 +474,19 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
         StreamService.stop(getApplication())
     }
 
+    fun surfaceFor(spec: EncoderSpec?): Surface? =
+        if (spec != null && spec == surfaceSpec) encoderSurface else null
+
     fun syncEncoder(next: EncoderSpec?) {
         if (next == spec) return
         spec = next
         if (next == null) {
             streamer.stop()
+            surfaceSpec = null
             encoderSurface = null
             return
         }
+        surfaceSpec = null
         encoderSurface = try {
             streamer.start(
                 next.codec,
@@ -497,6 +502,7 @@ class ServerViewModel(application: Application) : AndroidViewModel(application) 
             failStream(e.message ?: "Encoder start failed")
             null
         }
+        if (encoderSurface != null) surfaceSpec = next
     }
 
     override fun onCleared() {

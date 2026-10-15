@@ -914,7 +914,6 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
     val serverState = viewModel.serverState
     val serverInfo = viewModel.serverInfo
     val clientDropped = viewModel.clientDropped
-    val encoderSurface = viewModel.encoderSurface
     var streamError by viewModel::streamError
     val failStream: (String) -> Unit = viewModel::failStream
     val streaming = serverState == ServerState.Listening || serverState == ServerState.Connected
@@ -1053,7 +1052,7 @@ fun CameraServerLandscape(viewModel: ServerViewModel, modifier: Modifier = Modif
         null
     }
     LaunchedEffect(encoderSpec) { viewModel.syncEncoder(encoderSpec) }
-    val cameraConfig = previewConfig.copy(encoderSurface = encoderSurface)
+    val cameraConfig = previewConfig.copy(encoderSurface = viewModel.surfaceFor(encoderSpec))
     val modeLabel = if (constantBitrate) "CBR" else "VBR"
     val advancedSummary = (codec?.label ?: "No encoder") + ", " + modeLabel + ", " +
         (if (autoBitrate) "auto" else if (bitrateError != null) "invalid bitrate" else "${viewModel.manualBitrate} Mbps")
